@@ -1,0 +1,19 @@
+{
+    "files.associations": {
+        "*.tcc": "c",
+        "deque": "c",
+        "string": "c",
+        "unordered_map": "c",
+        "vector": "c",
+        "optional": "c",
+        "fstream": "c",
+        "ios": "c",
+        "istream": "c",
+        "limits": "c",
+        "ostream": "c",
+        "sstream": "c",
+        "streambuf": "c",
+        "type_traits": "c",
+        "tuple": "c"
+    }
+}
