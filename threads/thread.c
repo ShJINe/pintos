@@ -118,7 +118,8 @@ thread_start (void)
 }
 
 /* Called by the timer interrupt handler at each timer tick.
-   Thus, this function runs in an external interrupt context. */
+   Thus, this function runs in an external interrupt context. 
+   这是一个嵌入在中断处理框架中的中断处理程序，每个tick被时钟中断处理程序调用*/
 void
 thread_tick (void) 
 {
@@ -136,7 +137,7 @@ thread_tick (void)
 
   /* Enforce preemption. */
   if (++thread_ticks >= TIME_SLICE)
-    intr_yield_on_return ();
+    intr_yield_on_return (); // 当当前线程超过时间片TIME_SLICE时，调用该函数，将yield_return置为True，中断框架返回时检查yield_return标志，并执行抢占
 }
 
 /* Prints thread statistics. */
@@ -182,6 +183,7 @@ thread_create (const char *name, int priority,
   /* Initialize thread.初始化struct_thread */
   init_thread (t, name, priority);
   tid = t->tid = allocate_tid ();
+  t->time_blocked = 0;
   // 该函数用于创建线程，区别于从ELF中创建线程映像
   // 该函数创建的线程的代码来自已经载入的kernel
   // 因此不需要有将ELF载入的这一步
@@ -321,7 +323,8 @@ thread_yield (void)
 }
 
 /* Invoke function 'func' on all threads, passing along 'aux'.
-   This function must be called with interrupts off. */
+   This function must be called with interrupts off. 
+   运行此代码时，对所有的线程的struct_thread结构执行输入的函数func*/
 void
 thread_foreach (thread_action_func *func, void *aux)
 {
@@ -590,3 +593,31 @@ allocate_tid (void)
 /* Offset of `stack' member within `struct thread'.
    Used by switch.S, which can't figure it out on its own. */
 uint32_t thread_stack_ofs = offsetof (struct thread, stack);
+
+
+/*增加的函数：对t*中的time_blocked进行减一的操作，同时检查是否为0
+             若为0则将线程加入ready_list。作为thread_action_func
+             的参数
+  输入：t*和aux
+  输出：none*/
+
+void 
+timer_check_block(struct thread *t, void *aux)
+{
+  ASSERT(is_thread(t))
+  if (t->status != THREAD_BLOCKED || t->time_blocked == 0)
+  {
+    return ;
+  }
+
+  // printf("----------------------");
+  // printf("%lld",t->time_blocked);
+  ASSERT(t->time_blocked > 0);
+
+  t->time_blocked--;
+  
+  if (t->time_blocked == 0)
+  {
+    thread_unblock(t);
+  }
+}

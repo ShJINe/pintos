@@ -84,8 +84,10 @@ main (void)
   bss_init (); 
 
   /* Break command line into arguments and parse options. */
-  argv = read_command_line ();
+  argv = read_command_line (); //-q run alarm-simultaneous
+  // printf("##--##%s####", argv[0]);
   argv = parse_options (argv);
+  // printf("##++##%s####", argv[0]);
 
   /* Initialize ourselves as a thread so we can use locks,
      then enable console locking. */
@@ -201,6 +203,7 @@ read_command_line (void)
   int i;
 
   argc = *(uint32_t *) ptov (LOADER_ARG_CNT);
+  // printf("####%d####", argc);
   p = ptov (LOADER_ARGS);
   end = p + LOADER_ARGS_LEN;
   for (i = 0; i < argc; i++) 
@@ -209,6 +212,8 @@ read_command_line (void)
         PANIC ("command line arguments overflow");
 
       argv[i] = p;
+      // printf("####%s####", p);
+      // printf("#### %d ####",strnlen (p, end - p)); // output: 3 18
       p += strnlen (p, end - p) + 1;
     }
   argv[argc] = NULL;
@@ -216,10 +221,10 @@ read_command_line (void)
   /* Print kernel command line. */
   printf ("Kernel command line:");
   for (i = 0; i < argc; i++)
-    if (strchr (argv[i], ' ') == NULL)
+    if (strchr (argv[i], ' ') == NULL) // 检查字符串有无空格，若有空格则输出时用单引号括起来
       printf (" %s", argv[i]);
     else
-      printf (" '%s'", argv[i]);
+      printf (" '%s'", argv[i]); 
   printf ("\n");
 
   return argv;
@@ -228,9 +233,9 @@ read_command_line (void)
 /* Parses options in ARGV[]
    and returns the first non-option argument. */
 static char **
-parse_options (char **argv) 
+parse_options (char **argv) //-q  run alarm-simultaneous
 {
-  for (; *argv != NULL && **argv == '-'; argv++)
+  for (; *argv != NULL && **argv == '-'; argv++) // **argv=='-'表示*argv[0]=='-'，表示字符串第一个为'-'
     {
       char *save_ptr;
       char *name = strtok_r (*argv, "=", &save_ptr);
@@ -276,14 +281,14 @@ parse_options (char **argv)
      the pintos script to request real-time execution. */
   random_init (rtc_get_time ());
   
-  return argv;
+  return argv; // 去除掉前面的选项后返回
 }
 
 /* Runs the task specified in ARGV[1]. */
 static void
-run_task (char **argv)
+run_task (char **argv) // run alarm-simultaneous
 {
-  const char *task = argv[1];
+  const char *task = argv[1]; // alarm-simultaneous, argv[0]=run
   
   printf ("Executing '%s':\n", task);
 #ifdef USERPROG
@@ -297,7 +302,7 @@ run_task (char **argv)
 /* Executes all of the actions specified in ARGV[]
    up to the null pointer sentinel. */
 static void
-run_actions (char **argv) 
+run_actions (char **argv)  // run alarm-simultaneous
 {
   /* An action. */
   struct action 
@@ -321,7 +326,7 @@ run_actions (char **argv)
       {NULL, 0, NULL},
     };
 
-  while (*argv != NULL)
+  while (*argv != NULL) // (0)run (1)alarm-simultaneous
     {
       const struct action *a;
       int i;
@@ -330,12 +335,12 @@ run_actions (char **argv)
       for (a = actions; ; a++)
         if (a->name == NULL)
           PANIC ("unknown action `%s' (use -h for help)", *argv);
-        else if (!strcmp (*argv, a->name))
+        else if (!strcmp (*argv, a->name)) // 与actions中的run匹配
           break;
 
       /* Check for required arguments. */
       for (i = 1; i < a->argc; i++)
-        if (argv[i] == NULL)
+        if (argv[i] == NULL) // alarm-simultaneous == NULL ->  false
           PANIC ("action `%s' requires %d argument(s)", *argv, a->argc - 1);
 
       /* Invoke action and advance. */

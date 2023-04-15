@@ -44,12 +44,12 @@ static const char *test_name;
 
 /* Runs the test named NAME. */
 void
-run_test (const char *name) 
+run_test (const char *name) // name = alarm-simultaneous
 {
   const struct test *t;
 
   for (t = tests; t < tests + sizeof tests / sizeof *tests; t++)
-    if (!strcmp (name, t->name))
+    if (!strcmp (name, t->name)) // 找到alarm-simultaneous对应的测试函数
       {
         test_name = name;
         msg ("begin");

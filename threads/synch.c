@@ -196,8 +196,8 @@ lock_acquire (struct lock *lock)
   ASSERT (!intr_context ());
   ASSERT (!lock_held_by_current_thread (lock));
 
-  sema_down (&lock->semaphore);
-  lock->holder = thread_current ();
+  sema_down (&lock->semaphore); //最后一步是关中断
+  lock->holder = thread_current (); //更新cpu不会被打断
 }
 
 /* Tries to acquires LOCK and returns true if successful or false

@@ -88,6 +88,8 @@ struct thread
     char name[16];                      /* Name (for debugging purposes). */
     uint8_t *stack;                     /* Saved stack pointer. */
     int priority;                       /* Priority. */
+    int pre_priority;                   /* 之前的优先级 */
+    int64_t time_blocked;               /* 线程阻塞的时间 */
     struct list_elem allelem;           /* List element for all threads list. */
 
     /* Shared between thread.c and synch.c. */
@@ -129,6 +131,8 @@ void thread_yield (void);
 /* Performs some operation on thread t, given auxiliary data AUX. */
 typedef void thread_action_func (struct thread *t, void *aux);
 void thread_foreach (thread_action_func *, void *);
+// void timer_ckeck_block (struct thread *t, void *aux); // 新增函数声明
+thread_action_func timer_check_block;
 
 int thread_get_priority (void);
 void thread_set_priority (int);

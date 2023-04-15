@@ -384,7 +384,7 @@ intr_handler (struct intr_frame *frame)
       pic_end_of_interrupt (frame->vec_no); 
 
       if (yield_on_return) 
-        thread_yield (); 
+        thread_yield ();
     }
 }
 

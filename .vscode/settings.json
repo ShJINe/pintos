@@ -14,6 +14,11 @@
         "sstream": "c",
         "streambuf": "c",
         "type_traits": "c",
-        "tuple": "c"
-    }
+        "tuple": "c",
+        "main.h": "c",
+        "lib.h": "c",
+        "*.inc": "c",
+        "synch.h": "c"
+    },
+    "C_Cpp.errorSquiggles": "disabled"
 }
