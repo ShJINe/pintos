@@ -326,7 +326,7 @@ run_actions (char **argv)  // run alarm-simultaneous
       {NULL, 0, NULL},
     };
 
-  while (*argv != NULL) // (0)run (1)alarm-simultaneous
+  while (*argv != NULL) // (0)run (1)alarm-simultaneous (2)run (3)alarm-multiple
     {
       const struct action *a;
       int i;

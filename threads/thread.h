@@ -133,6 +133,7 @@ typedef void thread_action_func (struct thread *t, void *aux);
 void thread_foreach (thread_action_func *, void *);
 // void timer_ckeck_block (struct thread *t, void *aux); // 新增函数声明
 thread_action_func timer_check_block;
+list_less_func list_less_priority;
 
 int thread_get_priority (void);
 void thread_set_priority (int);

@@ -32,7 +32,7 @@ test_alarm_priority (void)
       thread_create (name, priority, alarm_priority_thread, NULL);
     }
 
-  thread_set_priority (PRI_MIN);
+  thread_set_priority (PRI_MIN); // 该函数在init线程中，因此这个函数将init线程的优先级设置为最低
 
   for (i = 0; i < 10; i++)
     sema_down (&wait_sema);
@@ -49,7 +49,7 @@ alarm_priority_thread (void *aux UNUSED)
   /* Now we know we're at the very beginning of a timer tick, so
      we can call timer_sleep() without worrying about races
      between checking the time and a timer interrupt. */
-  timer_sleep (wake_time - timer_ticks ());
+  timer_sleep (wake_time - timer_ticks ()); // 确保每个线程同时醒来
 
   /* Print a message on wake-up. */
   msg ("Thread %s woke up.", thread_name ());

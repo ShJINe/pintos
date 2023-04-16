@@ -56,7 +56,7 @@ timer_calibrate (void)
       loops_per_tick <<= 1;
       ASSERT (loops_per_tick != 0);
     }
-
+  
   /* Refine the next 8 bits of loops_per_tick. */
   high_bit = loops_per_tick;
   for (test_bit = high_bit >> 1; test_bit != high_bit >> 10; test_bit >>= 1)
@@ -205,7 +205,6 @@ too_many_loops (unsigned loops)
   int64_t start = ticks;
   while (ticks == start)
     barrier ();
-
   /* Run LOOPS loops. */
   start = ticks;
   busy_wait (loops);

@@ -21,7 +21,7 @@ test_priority_sema (void)
   ASSERT (!thread_mlfqs);
 
   sema_init (&sema, 0);
-  thread_set_priority (PRI_MIN);
+  thread_set_priority (PRI_MIN); // init线程优先级设为最低
   for (i = 0; i < 10; i++) 
     {
       int priority = PRI_DEFAULT - (i + 3) % 10 - 1;

@@ -22,7 +22,7 @@
 
 /* List of processes in THREAD_READY state, that is, processes
    that are ready to run but not actually running. */
-static struct list ready_list;
+static struct list ready_list[64];
 
 /* List of all processes.  Processes are added to this list
    when they are first scheduled and removed when they exit. */
@@ -71,6 +71,7 @@ static void schedule (void);
 void thread_schedule_tail (struct thread *prev);
 static tid_t allocate_tid (void);
 
+
 /* Initializes the threading system by transforming the code
    that's currently running into a thread.  This can't work in
    general and it is possible in this case only because loader.S
@@ -90,12 +91,24 @@ thread_init (void)
   ASSERT (intr_get_level () == INTR_OFF);
 
   lock_init (&tid_lock);
-  list_init (&ready_list);
+  if (thread_mlfqs)
+  {
+    for (int i = 0; i <= 63 ; i++)
+    {
+      list_init(&ready_list[i]);
+    }
+  }
+  else
+  {
+    list_init (&ready_list[0]);
+  }
   list_init (&all_list);
 
   /* Set up a thread structure for the running thread. */
-  initial_thread = running_thread ();
-  init_thread (initial_thread, "main", PRI_DEFAULT);
+  // 进入start时esp指向0xf000，page_round_down后esp指向0xe000，原来在栈底（高地址），将栈顶（低地址）的一部分用作放置struct_thread
+  initial_thread = running_thread (); 
+  // printf("((((%u))))",initial_thread); // 3221282816 0xc000 e000 物理地址0xe000
+  init_thread (initial_thread, "main", PRI_DEFAULT); // init线程的初始优先级是default 31
   initial_thread->status = THREAD_RUNNING;
   initial_thread->tid = allocate_tid ();
 }
@@ -108,7 +121,7 @@ thread_start (void)
   /* Create the idle thread. */
   struct semaphore idle_started;
   sema_init (&idle_started, 0);
-  thread_create ("idle", PRI_MIN, idle, &idle_started);
+  thread_create ("idle", PRI_MIN, idle, &idle_started); 
 
   /* Start preemptive thread scheduling. */
   intr_enable ();
@@ -208,7 +221,7 @@ thread_create (const char *name, int priority,
 
   /* Add to run queue. */
   thread_unblock (t); //在init_thread中将此线程block，但不加入任何block队列，此函数将此线程t取消阻塞并加入就绪队列
-
+  thread_yield();
   return tid;
 }
 
@@ -245,7 +258,17 @@ thread_unblock (struct thread *t)
 
   old_level = intr_disable ();
   ASSERT (t->status == THREAD_BLOCKED);
-  list_push_back (&ready_list, &t->elem);
+  if (thread_mlfqs)
+  {
+    // list_push_back (&ready_list[t->priority], &t->elem);
+    list_insert_ordered(&ready_list[t->priority], &t->elem, list_less_priority, NULL);
+  }
+  else
+  {
+    // list_push_back (&ready_list[0], &t->elem);
+    list_insert_ordered(&ready_list[0], &t->elem, list_less_priority, NULL);    
+  }
+
   t->status = THREAD_READY;
   intr_set_level (old_level);
 }
@@ -305,18 +328,30 @@ thread_exit (void)
 }
 
 /* Yields the CPU.  The current thread is not put to sleep and
-   may be scheduled again immediately at the scheduler's whim. */
+   may be scheduled again immediately at the scheduler's whim. 
+   让出CPU，将自身插入ready_list中，并进行调度*/
 void
 thread_yield (void) 
 {
   struct thread *cur = thread_current ();
   enum intr_level old_level;
   
-  ASSERT (!intr_context ());
+  ASSERT (!intr_context ()); //非外部中断
 
   old_level = intr_disable ();
   if (cur != idle_thread) 
-    list_push_back (&ready_list, &cur->elem);
+  {
+    if (thread_mlfqs)
+    {
+      // list_push_back (&ready_list[cur->priority], &cur->elem);
+      list_insert_ordered(&ready_list[cur->priority], &cur->elem, list_less_priority, NULL);
+    }
+    else
+    {
+      // list_push_back (&ready_list[0], &cur->elem);    
+      list_insert_ordered(&ready_list[0], &cur->elem, list_less_priority, NULL);
+    }
+  }
   cur->status = THREAD_READY;
   schedule ();
   intr_set_level (old_level);
@@ -345,6 +380,7 @@ void
 thread_set_priority (int new_priority) 
 {
   thread_current ()->priority = new_priority;
+  thread_yield();
 }
 
 /* Returns the current thread's priority. */
@@ -492,6 +528,8 @@ alloc_frame (struct thread *t, size_t size)
   return t->stack;
 }
 
+
+
 /* Chooses and returns the next thread to be scheduled.  Should
    return a thread from the run queue, unless the run queue is
    empty.  (If the running thread can continue running, then it
@@ -500,11 +538,23 @@ alloc_frame (struct thread *t, size_t size)
 static struct thread *
 next_thread_to_run (void) 
 {
-  if (list_empty (&ready_list))
+  if (thread_mlfqs)
+  {
+    for (int i = 0; i < 64; i++)
+      if (!list_empty(&ready_list[i]))
+        return list_entry(list_pop_front(&ready_list[i]), struct thread, elem);
     return idle_thread;
+  }
   else
-    return list_entry (list_pop_front (&ready_list), struct thread, elem);
+  {
+    if (list_empty (&ready_list[0]))
+      return idle_thread;
+    else
+      return list_entry (list_pop_front (&ready_list[0]), struct thread, elem);
+  }
 }
+
+
 
 /* Completes a thread switch by activating the new thread's page
    tables, and, if the previous thread is dying, destroying it.
@@ -559,7 +609,9 @@ thread_schedule_tail (struct thread *prev)
    thread to run and switches to it.
 
    It's not safe to call printf() until thread_schedule_tail()
-   has completed. */
+   has completed. 
+   选择ready_list中第一个或优先级最高的一个放入CPU运行
+   在thread_yeild,thread_exit,thread_block中含有*/
 static void
 schedule (void) 
 {
@@ -594,6 +646,7 @@ allocate_tid (void)
    Used by switch.S, which can't figure it out on its own. */
 uint32_t thread_stack_ofs = offsetof (struct thread, stack);
 
+//----------------------------------------------------------------------------------------------
 
 /*增加的函数：对t*中的time_blocked进行减一的操作，同时检查是否为0
              若为0则将线程加入ready_list。作为thread_action_func
@@ -620,4 +673,14 @@ timer_check_block(struct thread *t, void *aux)
   {
     thread_unblock(t);
   }
+}
+
+bool
+list_less_priority(const struct list_elem* a, const struct list_elem* b, void* aux)
+{
+  struct thread *t_a = list_entry(a, struct thread, elem);
+  struct thread *t_b = list_entry(b, struct thread, elem);
+  ASSERT(is_thread(t_a));
+  ASSERT(is_thread(t_b));
+  return t_a->priority > t_b->priority;
 }
