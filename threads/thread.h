@@ -101,9 +101,11 @@ struct thread
     char name[16];                      /* Name (for debugging purposes). */
     uint8_t *stack;                     /* Saved stack pointer. */
     int priority;                       /* Priority. */
-    int pre_priority;                   /* 之前的优先级 */
+    int donate_priority;                /* 捐献的优先级 */
     fixed_point recent_cpu;
     int nice;
+    struct list lock_list;              /* 是否被lock阻塞 */
+    void* lock_wait;                    /* 等待的lock */
     int64_t time_blocked;               /* 线程阻塞的时间 */
     struct list_elem allelem;           /* List element for all threads list. */
 
@@ -123,6 +125,7 @@ struct thread
    If true, use multi-level feedback queue scheduler.
    Controlled by kernel command-line option "-o mlfqs". */
 extern bool thread_mlfqs;
+bool init_finished;
 
 void thread_init (void);
 void thread_start (void);
@@ -154,6 +157,8 @@ thread_action_func timer_cal_priority;
 
 int thread_get_priority (void);
 void thread_set_priority (int);
+
+int thread_get_max_priority(struct thread *t);
 
 int thread_get_nice (void);
 void thread_set_nice (int);

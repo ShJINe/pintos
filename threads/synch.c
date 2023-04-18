@@ -33,6 +33,7 @@
 #include "threads/thread.h"
 
 static list_less_func list_less_sema_priority;
+static list_less_func list_less_lock_priority;
 
 /* Initializes semaphore SEMA to VALUE.  A semaphore is a
    nonnegative integer along with two atomic operators for
@@ -184,6 +185,46 @@ lock_init (struct lock *lock)
   sema_init (&lock->semaphore, 1); //最多为1
 }
 
+static void
+thread_donate_to (struct thread* t)
+{
+  struct thread *cur = thread_current();
+  // printf("\n-----donatee thread:-----");
+  // printf("\nmagic:%u",t->magic);
+  // printf("\nname:%s",t->name);
+  // printf("\npriority:%d",t->priority);
+  // printf("\ndonate_priority:%d",t->donate_priority);
+  // printf("\nstatus:%d",t->status);
+  // printf("\nlock blocked:%d",t->lock_blocked);
+  // printf("\n-----donater thread:-----");
+  // printf("\nname:%s",cur->name);
+  // printf("\npriority:%d",cur->priority);
+  // printf("\ndonate_priority:%d",cur->donate_priority);
+  // printf("\n--------------------------\n");
+  if (thread_get_max_priority(cur) <= thread_get_max_priority(t))
+    return ;// 没有发生优先级倒置，不需要捐献或已经被捐献
+  // 找到t所在的队列
+  struct list* now_list;
+  struct list_elem* e = &t->elem; // 获得head
+  while (list_prev(e)->prev != NULL)
+  {
+    e = list_prev(e);
+  }
+  e = e->prev;
+  now_list = list_entry(e, struct list, head);
+  // 移除该元素
+  list_remove(&t->elem);
+  // 捐献优先级
+  t->donate_priority = thread_get_max_priority(cur);
+  // 将其重新放进队列
+  list_insert_ordered(now_list, &t->elem, list_less_priority, NULL);
+  if (t->lock_wait != NULL)
+  {
+    ASSERT(t->status == THREAD_BLOCKED);
+    thread_donate_to(((struct lock*)(t->lock_wait))->holder);
+  }
+}
+
 /* Acquires LOCK, sleeping until it becomes available if
    necessary.  The lock must not already be held by the current
    thread.
@@ -199,9 +240,31 @@ lock_acquire (struct lock *lock)
   ASSERT (!intr_context ());
   ASSERT (!lock_held_by_current_thread (lock));
 
+  if (!thread_mlfqs && init_finished)
+  {
+    struct thread *cur = thread_current();
+    // cur->donate_priority = PRI_MIN;
+
+    if (lock->holder!=NULL)
+    {
+      cur->lock_wait = (void*) lock;
+      thread_donate_to(lock->holder);
+    }
+  }
+
   sema_down (&lock->semaphore); //最后一步是关中断
-  lock->holder = thread_current (); //更新cpu不会被打断
+  lock->holder = thread_current(); //更新cpu不会被打断
+  // printf("\nacquire:%d",lock);
+
+  if (!thread_mlfqs && init_finished)
+  {
+    struct thread *cur = thread_current();
+    cur->lock_wait = NULL;
+    list_push_back(&cur->lock_list, &lock->elem);
+  }
 }
+
+
 
 /* Tries to acquires LOCK and returns true if successful or false
    on failure.  The lock must not already be held by the current
@@ -233,6 +296,26 @@ lock_release (struct lock *lock)
 {
   ASSERT (lock != NULL);
   ASSERT (lock_held_by_current_thread (lock));
+
+  // printf("\nrelease:%d",lock);
+  if (!thread_mlfqs && init_finished)
+  {
+    struct thread* cur = thread_current();
+    list_remove(&lock->elem);
+    if (!list_empty(&cur->lock_list))
+    {
+      struct lock *max_priority_lock = list_entry(list_max(&cur->lock_list, list_less_lock_priority, NULL),struct lock, elem);
+      if (!list_empty(&max_priority_lock->semaphore.waiters))
+        cur->donate_priority = thread_get_max_priority(list_entry(list_front(&max_priority_lock->semaphore.waiters), struct thread, elem));
+      else
+        cur->donate_priority = PRI_MIN;
+    }
+    else
+    {
+      // ASSERT(false);
+      cur->donate_priority = PRI_MIN;
+    }
+  }
 
   lock->holder = NULL;
   sema_up (&lock->semaphore);
@@ -351,4 +434,18 @@ list_less_sema_priority(const struct list_elem *a UNUSED, const struct list_elem
   struct semaphore* s_b = &list_entry(b, struct semaphore_elem, elem)->semaphore;
   int priority_b = list_entry(list_front(&s_b->waiters), struct thread, elem)->priority;
   return priority_a > priority_b;
+}
+
+static bool
+list_less_lock_priority(const struct list_elem *a UNUSED, const struct list_elem *b, void* aux UNUSED)
+{
+  struct lock *l_a = list_entry(a, struct lock, elem);
+  struct lock *l_b = list_entry(b, struct lock, elem);
+  int p_a = PRI_MIN;
+  int p_b = PRI_MIN;
+  if (!list_empty(&l_a->semaphore.waiters))
+    p_a = thread_get_max_priority(list_entry(list_front(&l_a->semaphore.waiters), struct thread, elem));
+  if (!list_empty(&l_b->semaphore.waiters))
+    p_b = thread_get_max_priority(list_entry(list_front(&l_b->semaphore.waiters), struct thread, elem));
+  return p_a < p_b;
 }

@@ -23,11 +23,14 @@
 static thread_func a_thread_func;
 static thread_func b_thread_func;
 static thread_func c_thread_func;
+static struct thread *init;
 
 void
 test_priority_donate_multiple2 (void) 
 {
   struct lock a, b;
+
+  init = thread_current();
 
   /* This test does not work with the MLFQS. */
   ASSERT (!thread_mlfqs);
@@ -42,6 +45,9 @@ test_priority_donate_multiple2 (void)
   lock_acquire (&b);
 
   thread_create ("a", PRI_DEFAULT + 3, a_thread_func, &a);
+  // printf("\nthread_name:%s, dp:%d\n",init->name, init->donate_priority);
+  // printf("\nthread_name:%s, dp:%d\n",init->name, init->donate_priority);
+  // printf("\nthread_name:%s, size:%d\n",init->name, list_size(&init->lock_list));
   msg ("Main thread should have priority %d.  Actual priority: %d.",
        PRI_DEFAULT + 3, thread_get_priority ());
 
@@ -86,5 +92,6 @@ b_thread_func (void *lock_)
 static void
 c_thread_func (void *a_ UNUSED) 
 {
+  // printf("thread_name:%s, max:%d",init->name, thread_get_max_priority(init));
   msg ("Thread c finished.");
 }

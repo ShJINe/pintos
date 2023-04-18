@@ -118,6 +118,7 @@ thread_init (void)
   init_thread (initial_thread, "main", PRI_DEFAULT); // init线程的初始优先级是default 31
   initial_thread->status = THREAD_RUNNING;
   initial_thread->tid = allocate_tid ();
+  init_finished = true;
 }
 
 /* Starts preemptive thread scheduling by enabling interrupts.
@@ -204,7 +205,7 @@ thread_create (const char *name, int priority,
   /* Initialize thread.初始化struct_thread */
   init_thread (t, name, priority);
   tid = t->tid = allocate_tid ();
-  t->time_blocked = 0;
+  
   // 该函数用于创建线程，区别于从ELF中创建线程映像
   // 该函数创建的线程的代码来自已经载入的kernel
   // 因此不需要有将ELF载入的这一步
@@ -245,6 +246,7 @@ thread_block (void)
   ASSERT (!intr_context ());
   ASSERT (intr_get_level () == INTR_OFF);
 
+  // printf("curname:%s", thread_current()->name);
   thread_current ()->status = THREAD_BLOCKED;
   schedule ();
 }
@@ -391,15 +393,24 @@ thread_set_priority (int new_priority)
 {
   if (thread_mlfqs) //多级反馈队列禁止自己设置优先级
     return ;
-  thread_current ()->priority = new_priority;
-  thread_yield();
+  struct thread *cur = thread_current();
+  // printf("\ns---dp:%d, p:%d\n",cur->donate_priority, cur->priority);
+  cur->priority = new_priority;
+  if (cur->donate_priority < new_priority)
+    thread_yield();
 }
 
 /* Returns the current thread's priority. */
 int
 thread_get_priority (void) 
 {
-  return thread_current ()->priority;
+  struct thread* cur = thread_current();
+  if (thread_mlfqs)
+    return cur->priority;
+  // printf("\ng---dp:%d, p:%d\n",cur->donate_priority, cur->priority);
+  // printf("return:%d",(cur->donate_priority > cur->priority));
+  // printf("\ng---dp:%d, p:%d\n",cur->donate_priority, cur->priority);
+  return thread_get_max_priority(cur);
 }
 
 /* Sets the current thread's nice value to NICE. */
@@ -555,7 +566,11 @@ init_thread (struct thread *t, const char *name, int priority)
   strlcpy (t->name, name, sizeof t->name);
   t->stack = (uint8_t *) t + PGSIZE;
   t->priority = priority;
+  t->donate_priority = PRI_MIN;
   t->recent_cpu = 0;
+  t->lock_wait = NULL;
+  list_init(&t->lock_list);
+  t->time_blocked = 0;
   t->nice = 0;
   t->magic = THREAD_MAGIC;
 
@@ -730,7 +745,13 @@ list_less_priority(const struct list_elem* a, const struct list_elem* b, void* a
   struct thread *t_b = list_entry(b, struct thread, elem);
   ASSERT(is_thread(t_a));
   ASSERT(is_thread(t_b));
-  return t_a->priority > t_b->priority;
+  if (thread_mlfqs)
+    return t_a->priority > t_b->priority;
+  
+  int p_a = thread_get_max_priority(t_a);
+  int p_b = thread_get_max_priority(t_b);
+  
+  return p_a > p_b;
 }
 
 void 
@@ -760,4 +781,10 @@ timer_cal_priority(struct thread *t, void *aux UNUSED)
   //   list_remove(&t->elem);
   //   list_push_back(&ready_list[t->priority], &t->elem);
   // }
+}
+
+int 
+thread_get_max_priority(struct thread *t)
+{
+  return (t->donate_priority > t->priority)? t->donate_priority: t->priority;
 }
