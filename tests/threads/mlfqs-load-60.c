@@ -119,6 +119,7 @@ test_mlfqs_load_60 (void)
   ASSERT (thread_mlfqs);
 
   start_time = timer_ticks ();
+  printf("\nstart_time:%lld",start_time);
   msg ("Starting %d niced load threads...", THREAD_CNT);
   for (i = 0; i < THREAD_CNT; i++) 
     {
@@ -128,12 +129,13 @@ test_mlfqs_load_60 (void)
     }
   msg ("Starting threads took %d seconds.",
        timer_elapsed (start_time) / TIMER_FREQ);
-  
   for (i = 0; i < 90; i++) 
     {
       int64_t sleep_until = start_time + TIMER_FREQ * (2 * i + 10);
       int load_avg;
       timer_sleep (sleep_until - timer_ticks ());
+      printf("INIT----now is:%lld",timer_ticks());
+
       load_avg = thread_get_load_avg ();
       msg ("After %d seconds, load average=%d.%02d.",
            i * 2, load_avg / 100, load_avg % 100);
@@ -143,12 +145,14 @@ test_mlfqs_load_60 (void)
 static void
 load_thread (void *aux UNUSED) 
 {
-  int64_t sleep_time = 10 * TIMER_FREQ;
-  int64_t spin_time = sleep_time + 60 * TIMER_FREQ;
-  int64_t exit_time = spin_time + 60 * TIMER_FREQ;
+  int64_t sleep_time = 10 * TIMER_FREQ; //10s
+  int64_t spin_time = sleep_time + 60 * TIMER_FREQ; //10+60s
+  int64_t exit_time = spin_time + 60 * TIMER_FREQ; //10+60+60s
 
   thread_set_nice (20);
   timer_sleep (sleep_time - timer_elapsed (start_time));
+  printf("AAA----now is:%lld",timer_ticks());
+  // printf("\n%s awake",thread_current()->name);
   while (timer_elapsed (start_time) < spin_time)
     continue;
   timer_sleep (exit_time - timer_elapsed (start_time));

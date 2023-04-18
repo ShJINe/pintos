@@ -23,6 +23,19 @@ typedef int tid_t;
 #define PRI_MIN 0                       /* Lowest priority. */
 #define PRI_DEFAULT 31                  /* Default priority. */
 #define PRI_MAX 63                      /* Highest priority. */
+//----------------------------------------------------------
+#define FP_TH 17
+#define TO_FP(int_int) (int_int << FP_TH)
+#define TO_INT_DOWN(fp_fp) ((int64_t)fp_fp >> FP_TH)
+#define TO_INT_NEAREST(fp_fp) (((int64_t)fp_fp + (TO_FP(1) >> 1)) >> FP_TH)
+#define FP_ADD(a, b) (a + b)
+#define FP_SUB(a, b) (a - b)
+#define FP_MUL(a, b) (((int64_t) a * b ) >> FP_TH)
+#define FP_DIV(a, b) (((int64_t) a << FP_TH ) / b)
+// #define FP_MUL_INT(a, b) ((int64_t)a * b)
+// #define FP_DIV_INT(a, b) ((int64_t)a / b)
+// #define FP_DIV_ROUND_NEAREST(a, b) (((int64_t) a + FP_DIV_ROUND_DOWN(b, TO_FP(2))) * FP_TH / b)
+typedef int32_t fixed_point;
 
 /* A kernel thread or user process.
 
@@ -89,6 +102,8 @@ struct thread
     uint8_t *stack;                     /* Saved stack pointer. */
     int priority;                       /* Priority. */
     int pre_priority;                   /* 之前的优先级 */
+    fixed_point recent_cpu;
+    int nice;
     int64_t time_blocked;               /* 线程阻塞的时间 */
     struct list_elem allelem;           /* List element for all threads list. */
 
@@ -131,9 +146,11 @@ void thread_yield (void);
 /* Performs some operation on thread t, given auxiliary data AUX. */
 typedef void thread_action_func (struct thread *t, void *aux);
 void thread_foreach (thread_action_func *, void *);
-// void timer_ckeck_block (struct thread *t, void *aux); // 新增函数声明
-thread_action_func timer_check_block;
+// void timer_ckeck_block (struct thread *t, void *aux); // 新增函数声明;
 list_less_func list_less_priority;
+thread_action_func timer_check_block;
+thread_action_func timer_cal_recent_cpu;
+thread_action_func timer_cal_priority;
 
 int thread_get_priority (void);
 void thread_set_priority (int);
@@ -141,6 +158,8 @@ void thread_set_priority (int);
 int thread_get_nice (void);
 void thread_set_nice (int);
 int thread_get_recent_cpu (void);
+void thread_set_recent_cpu (void);
 int thread_get_load_avg (void);
+void thread_set_load_avg(void);
 
 #endif /* threads/thread.h */

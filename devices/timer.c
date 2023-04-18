@@ -191,9 +191,24 @@ timer_print_stats (void)
 static void
 timer_interrupt (struct intr_frame *args UNUSED)
 {
-  ticks++;
-  thread_tick ();
+  ticks++; 
+  // unblock所有等待的线程
   thread_foreach(timer_check_block, NULL);
+  if (thread_mlfqs)
+  {
+    thread_set_recent_cpu();
+    if (ticks % TIMER_FREQ == 0)
+    {
+      thread_set_load_avg();
+      thread_foreach(timer_cal_recent_cpu, NULL);
+    }
+    else if (ticks % 4 == 0)
+    {
+      // printf("\nthread_now_is:%s, priority:%d",thread_current()->name, thread_current()->priority);
+      thread_foreach(timer_cal_priority, NULL);
+    }
+  }
+  thread_tick ();
 }
 
 /* Returns true if LOOPS iterations waits for more than one timer
