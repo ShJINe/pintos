@@ -118,14 +118,14 @@ struct thread
 #endif
 
     /* Owned by thread.c. */
-    unsigned magic;                     /* Detects stack overflow. */
+    unsigned magic;                     /* Detects stack overflow. */ // 最高的地址，上面就是栈了
   };
 
 /* If false (default), use round-robin scheduler.
    If true, use multi-level feedback queue scheduler.
    Controlled by kernel command-line option "-o mlfqs". */
 extern bool thread_mlfqs;
-bool init_finished;
+bool scheduler_started; // 在thread_start之后，idle线程被创建，中断打开，抢占式调度器开始工作，开始发生抢占和优先级捐献
 
 void thread_init (void);
 void thread_start (void);

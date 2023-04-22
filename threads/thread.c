@@ -118,11 +118,10 @@ thread_init (void)
   init_thread (initial_thread, "main", PRI_DEFAULT); // init线程的初始优先级是default 31
   initial_thread->status = THREAD_RUNNING;
   initial_thread->tid = allocate_tid ();
-  init_finished = true;
 }
 
 /* Starts preemptive thread scheduling by enabling interrupts.
-   Also creates the idle thread. */
+   Also creates the idle thread. 允许io设备就绪而产生的可屏蔽中断引发抢占*/
 void
 thread_start (void) 
 {
@@ -131,7 +130,8 @@ thread_start (void)
   sema_init (&idle_started, 0);
   thread_create ("idle", PRI_MIN, idle, &idle_started); 
 
-  /* Start preemptive thread scheduling. */
+  /* Start preemptive thread scheduling. 允许io设备就绪而产生的可屏蔽中断引发抢占*/
+  scheduler_started = true;
   intr_enable ();
 
   /* Wait for the idle thread to initialize idle_thread. */
@@ -215,7 +215,7 @@ thread_create (const char *name, int priority,
   // 2. 给函数传递的参数直接写在上一个栈帧中
   /* Stack frame for kernel_thread(). */
   kf = alloc_frame (t, sizeof *kf);  //在线程t的struct_thread的stack中创建一个函数栈帧，并将该栈帧的地址返回
-  kf->eip = NULL;           // 栈顶
+  kf->eip = NULL;           // kernel_thread永远不会返回
   kf->function = function;  // 栈中低地址，最后一个入栈的参数，对应函数的第一个形参
   kf->aux = aux;            // 栈中高地址，第一个入栈的参数，对应函数的最后一个形参
 
@@ -243,6 +243,8 @@ thread_create (const char *name, int priority,
 void
 thread_block (void) 
 {
+  if (!scheduler_started)
+    return ;
   ASSERT (!intr_context ());
   ASSERT (intr_get_level () == INTR_OFF);
 
@@ -345,6 +347,12 @@ thread_exit (void)
 void
 thread_yield (void) 
 {
+  if (!scheduler_started)
+  {
+    printf("yes");
+    return ;
+  }
+  printf ("no");
   struct thread *cur = thread_current ();
   enum intr_level old_level;
   

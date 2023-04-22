@@ -126,7 +126,7 @@ ide_init (void)
       lock_init (&c->lock);
       c->expecting_interrupt = false;
       sema_init (&c->completion_wait, 0);
- 
+      
       /* Initialize devices. */
       for (dev_no = 0; dev_no < 2; dev_no++)
         {
@@ -137,13 +137,13 @@ ide_init (void)
           d->dev_no = dev_no;
           d->is_ata = false;
         }
-
+        
       /* Register interrupt handler. */
       intr_register_ext (c->irq, interrupt_handler, c->name);
 
       /* Reset hardware. */
       reset_channel (c);
-
+      
       /* Distinguish ATA hard disks from other devices. */
       if (check_device_type (&c->devices[0]))
         check_device_type (&c->devices[1]);
@@ -272,7 +272,7 @@ identify_ata_device (struct ata_disk *d)
      indicating the device's response is ready, and read the data
      into our buffer. */
   select_device_wait (d);
-  issue_pio_command (c, CMD_IDENTIFY_DEVICE);
+  issue_pio_command (c, CMD_IDENTIFY_DEVICE); // error in here
   sema_down (&c->completion_wait);
   if (!wait_while_busy (d))
     {
@@ -409,9 +409,11 @@ issue_pio_command (struct channel *c, uint8_t command)
   /* Interrupts must be enabled or our semaphore will never be
      up'd by the completion handler. */
   ASSERT (intr_get_level () == INTR_ON);
-
+  
   c->expecting_interrupt = true;
-  outb (reg_command (c), command);
+  printf("\n-------44-------\n");
+  outb (reg_command (c), command); 
+  printf("\n-------33-------\n");
 }
 
 /* Reads a sector from channel C's data register in PIO mode into

@@ -33,20 +33,20 @@ process_execute (const char *file_name)
 
   /* Make a copy of FILE_NAME.
      Otherwise there's a race between the caller and load(). */
-  fn_copy = palloc_get_page (0);
+  fn_copy = palloc_get_page (0); /* 得到低地址 */
   if (fn_copy == NULL)
     return TID_ERROR;
-  strlcpy (fn_copy, file_name, PGSIZE);
+  strlcpy (fn_copy, file_name, PGSIZE); /* 从低向高的方向拷贝，因为eip的执行方向也是从低到高的 */
 
   /* Create a new thread to execute FILE_NAME. */
-  tid = thread_create (file_name, PRI_DEFAULT, start_process, fn_copy);
+  tid = thread_create (file_name, PRI_DEFAULT, start_process, fn_copy); /* 创建线程执行start_process函数，这是一个用户线程框架，fn_copy是它的参数，是实际执行的用户函数，但这里还是一个字符串 */
   if (tid == TID_ERROR)
-    palloc_free_page (fn_copy); 
+    palloc_free_page (fn_copy);
   return tid;
 }
 
 /* A thread function that loads a user process and starts it
-   running. */
+   running. 这里当前线程作为一个用户线程将自己的ELF文件装载入内存，并跳到那里执行*/
 static void
 start_process (void *file_name_)
 {
@@ -54,12 +54,13 @@ start_process (void *file_name_)
   struct intr_frame if_;
   bool success;
 
-  /* Initialize interrupt frame and load executable. */
+  /* Initialize interrupt frame and load executable. 
+  初始化中断栈帧并装载ELF文件*/
   memset (&if_, 0, sizeof if_);
   if_.gs = if_.fs = if_.es = if_.ds = if_.ss = SEL_UDSEG;
   if_.cs = SEL_UCSEG;
   if_.eflags = FLAG_IF | FLAG_MBS;
-  success = load (file_name, &if_.eip, &if_.esp);
+  success = load (file_name, &if_.eip, &if_.esp); 
 
   /* If load failed, quit. */
   palloc_free_page (file_name);
@@ -71,7 +72,14 @@ start_process (void *file_name_)
      threads/intr-stubs.S).  Because intr_exit takes all of its
      arguments on the stack in the form of a `struct intr_frame',
      we just point the stack pointer (%esp) to our stack frame
-     and jump to it. */
+     and jump to it. 
+     1. 由于不能直接修改eip，cs，esp，ss等寄存器，因此调用中断返回程序，
+        执行刚刚构造的栈帧，返回到指定的地址，也就是装载的用户程序的地址。
+        在返回到用户程序的时，即在更改cs寄存器时，同时修改了当前程序的特
+        权级，由于0环到了3环
+     2. cr0中不涉及特权级，只包含了当前是保护模式还是实模式
+     3. 特权级检查通过硬件完成，这是一个典型的操作系统与CPU配合的案例
+        操作系统构造和管理特权级，硬件完成特权级检查*/
   asm volatile ("movl %0, %%esp; jmp intr_exit" : : "g" (&if_) : "memory");
   NOT_REACHED ();
 }
@@ -204,7 +212,8 @@ static bool load_segment (struct file *file, off_t ofs, uint8_t *upage,
 /* Loads an ELF executable from FILE_NAME into the current thread.
    Stores the executable's entry point into *EIP
    and its initial stack pointer into *ESP.
-   Returns true if successful, false otherwise. */
+   Returns true if successful, false otherwise. 
+   装载一个ELF可执行文件到当前线程中*/
 bool
 load (const char *file_name, void (**eip) (void), void **esp) 
 {
@@ -215,7 +224,8 @@ load (const char *file_name, void (**eip) (void), void **esp)
   bool success = false;
   int i;
 
-  /* Allocate and activate page directory. */
+  /* Allocate and activate page directory. 
+  分配并激活页目录 */
   t->pagedir = pagedir_create ();
   if (t->pagedir == NULL) 
     goto done;
@@ -229,7 +239,8 @@ load (const char *file_name, void (**eip) (void), void **esp)
       goto done; 
     }
 
-  /* Read and verify executable header. */
+  /* Read and verify executable header. 
+  读取并验证ELF头，是否是ELF文件，代码格式，目标机器类型等*/
   if (file_read (file, &ehdr, sizeof ehdr) != sizeof ehdr
       || memcmp (ehdr.e_ident, "\177ELF\1\1\1", 7)
       || ehdr.e_type != 2

@@ -66,7 +66,7 @@ palloc_init (size_t user_page_limit)
    otherwise from the kernel pool.  If PAL_ZERO is set in FLAGS,
    then the pages are filled with zeros.  If too few pages are
    available, returns a null pointer, unless PAL_ASSERT is set in
-   FLAGS, in which case the kernel panics. 分配连续的页*/
+   FLAGS, in which case the kernel panics. 分配连续的页，返回最低的地址*/
 void *
 palloc_get_multiple (enum palloc_flags flags, size_t page_cnt)
 {
@@ -106,7 +106,9 @@ palloc_get_multiple (enum palloc_flags flags, size_t page_cnt)
    otherwise from the kernel pool.  If PAL_ZERO is set in FLAGS,
    then the page is filled with zeros.  If no pages are
    available, returns a null pointer, unless PAL_ASSERT is set in
-   FLAGS, in which case the kernel panics. */
+   FLAGS, in which case the kernel panics.
+   flag =  用户页04 全0页02 panic_on_failure 01
+   返回低地址*/
 void *
 palloc_get_page (enum palloc_flags flags) 
 {

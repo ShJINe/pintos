@@ -83,9 +83,9 @@ tss_init (void)
      few fields of it are ever referenced, and those are the only
      ones we initialize. */
   tss = palloc_get_page (PAL_ASSERT | PAL_ZERO);
-  tss->ss0 = SEL_KDSEG;
-  tss->bitmap = 0xdfff;
-  tss_update ();
+  tss->ss0 = SEL_KDSEG;  
+  tss->bitmap = 0xdfff;  
+  tss_update ();  
 }
 
 /* Returns the kernel TSS. */

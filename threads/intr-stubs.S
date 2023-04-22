@@ -22,21 +22,22 @@ intr_entry:
 	pushl %es
 	pushl %fs
 	pushl %gs
-	pushal
+	pushal   /* push all 通用 register：eax-edx esp ebp esi edi 这里完成了栈帧*/
         
 	/* Set up kernel environment. */
 	cld			/* String instructions go upward. */
-	mov $SEL_KDSEG, %eax	/* Initialize segment registers. */
+	mov $SEL_KDSEG, %eax	/* Initialize segment registers. 装载数据段*/
 	mov %eax, %ds
 	mov %eax, %es
-	leal 56(%esp), %ebp	/* Set up frame pointer. */
+	leal 56(%esp), %ebp	/* Set up frame pointer. 这里将上一个栈帧的base放入ebp，返回后 
+                                   x86架构下实模式的堆栈是满递减堆栈，保护模式下可以选择，但是一般设置为满递减 */
 
 	/* Call interrupt handler. */
-	pushl %esp
+	pushl %esp   /* 作为参数传递。 此时esp指向刚刚构造的栈帧的最低地址，而C语言中结构体的地址就是最低元素的地址，也就是这里保存了intr_frame的地址*/
 .globl intr_handler
-	call intr_handler
-	addl $4, %esp
-.endfunc
+	call intr_handler /* 调用中断处理框架 */
+	addl $4, %esp /* 返回时忽略掉该传递的参数 */
+.endfunc /* 没有返回继续执行下面的函数 */
 
 /* Interrupt exit.
 
@@ -58,10 +59,10 @@ intr_exit:
 
         /* Discard `struct intr_frame' vec_no, error_code,
            frame_pointer members. */
-	addl $12, %esp
+	addl $12, %esp  // 将esp指向eip，用于iter返回
 
         /* Return to caller. */
-	iret
+	iret /* pop ss，esp，eflag，cs，eip */
 .endfunc
 
 /* Interrupt stubs.
@@ -72,9 +73,10 @@ intr_exit:
    the address of each of these functions in the correct spot in
    `intr_stubs', an array of function pointers.
 
+   intr_stub完成了bp，error_code，中断类型号的压栈
    Most of the stubs do this:
 
-        1. Push %ebp on the stack (frame_pointer in `struct intr_frame').
+        1. Push %ebp on the stack (frame_pointer in `struct intr_frame'). 这里的bp也就是上一个栈帧的起始地址，指向上一个栈帧的base，用于中断返回
 
         2. Push 0 on the stack (error_code).
 
@@ -91,7 +93,8 @@ intr_exit:
         3. Push the interrupt number on the stack. */
 
 	.data
-.globl intr_stubs
+.globl intr_stubs /* 这里intr_stubs标号指向data数据段的当前位置，后面的stub函数入口从这个地址开始存放，同时将该标号声明为globl说明将被链接器用到，即别的文件引用 
+                     这里对外部的C语言文件呈现的就是一个256元素的数组，其中每个元素是一个32位的代码段text中的地址，也就是一个指针，指向一个stub函数*/
 intr_stubs:
 
 /* This implements steps 1 and 2, described above, in the common
@@ -108,7 +111,10 @@ intr_stubs:
 
 /* Emits a stub for interrupt vector NUMBER.
    TYPE is `zero', for the case where we push a 0 error code,
-   or `REAL', if the CPU pushes an error code for us. */
+   or `REAL', if the CPU pushes an error code for us. 
+   只有前两步不一样，这里统一完成第三步
+   每个函数结束后，用.data将函数入口(标号)添加到data数据段中，按顺序排列
+   其中push $0x##NUMBER;将中断向量号当作常数写入每个函数中，相当于2号函数就是push 0x02，3号就是push 0x03*/
 #define STUB(NUMBER, TYPE)                      \
 	.text;                                  \
 .func intr##NUMBER##_stub;			\

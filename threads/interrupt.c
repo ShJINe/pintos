@@ -267,7 +267,7 @@ pic_end_of_interrupt (int irq)
   ASSERT (irq >= 0x20 && irq < 0x30);
 
   /* Acknowledge master PIC. */
-  outb (0x20, 0x20);
+  outb (0x20, 0x20); // 清中断
 
   /* Acknowledge slave PIC if this is a slave interrupt. */
   if (irq >= 0x28)

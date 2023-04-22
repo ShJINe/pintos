@@ -26,9 +26,9 @@
 
 /* GDT selectors defined by loader.
    More selectors are defined by userprog/gdt.h. */
-#define SEL_NULL        0x00    /* Null selector. */           //0x00 000 后三位用于标识，不用作选择
-#define SEL_KCSEG       0x08    /* Kernel code selector. */    //0x01 000
-#define SEL_KDSEG       0x10    /* Kernel data selector. */    //0x10 000
+#define SEL_NULL        0x00    /* Null selector. */           //0x00(0) 0 00 后三位用于标识，不用作选择
+#define SEL_KCSEG       0x08    /* Kernel code selector. */    //0x01(1) 0 00
+#define SEL_KDSEG       0x10    /* Kernel data selector. */    //0x10(2) 0 00
 
 #ifndef __ASSEMBLER__
 #include <stdint.h>

@@ -240,7 +240,7 @@ lock_acquire (struct lock *lock)
   ASSERT (!intr_context ());
   ASSERT (!lock_held_by_current_thread (lock));
 
-  if (!thread_mlfqs && init_finished)
+  if (!thread_mlfqs && scheduler_started)
   {
     struct thread *cur = thread_current();
     // cur->donate_priority = PRI_MIN;
@@ -256,7 +256,7 @@ lock_acquire (struct lock *lock)
   lock->holder = thread_current(); //更新cpu不会被打断
   // printf("\nacquire:%d",lock);
 
-  if (!thread_mlfqs && init_finished)
+  if (!thread_mlfqs && scheduler_started)
   {
     struct thread *cur = thread_current();
     cur->lock_wait = NULL;
@@ -298,7 +298,7 @@ lock_release (struct lock *lock)
   ASSERT (lock_held_by_current_thread (lock));
 
   // printf("\nrelease:%d",lock);
-  if (!thread_mlfqs && init_finished)
+  if (!thread_mlfqs && scheduler_started)
   {
     struct thread* cur = thread_current();
     list_remove(&lock->elem);

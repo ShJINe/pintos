@@ -157,7 +157,8 @@ bss_init (void)
 /* Populates the base page directory and page table with the
    kernel virtual mapping, and then sets up the CPU to use the
    new page directory.  Points init_page_dir to the page
-   directory it creates. */
+   directory it creates. 
+   重新初始化页表和页目录，原来页表弃用*/
 static void
 paging_init (void)
 {
@@ -165,23 +166,23 @@ paging_init (void)
   size_t page;
   extern char _start, _end_kernel_text;
 
-  pd = init_page_dir = palloc_get_page (PAL_ASSERT | PAL_ZERO);
+  pd = init_page_dir = palloc_get_page (PAL_ASSERT | PAL_ZERO); // init_page_dir是页目录地址，有2^10个页目录项，每个页表有2^10个页表项，对应4kb地址，因此能表示2^10*2^10*4KB=2^32
   pt = NULL;
   for (page = 0; page < init_ram_pages; page++)
     {
       uintptr_t paddr = page * PGSIZE;
-      char *vaddr = ptov (paddr);
-      size_t pde_idx = pd_no (vaddr);
-      size_t pte_idx = pt_no (vaddr);
+      char *vaddr = ptov (paddr);         /* 获得32位虚拟地址 */
+      size_t pde_idx = pd_no (vaddr);     /* 取前10位为页目录索引 */
+      size_t pte_idx = pt_no (vaddr);     /* 取接着的10位为页表索引 */
       bool in_kernel_text = &_start <= vaddr && vaddr < &_end_kernel_text;
 
       if (pd[pde_idx] == 0)
         {
-          pt = palloc_get_page (PAL_ASSERT | PAL_ZERO);
-          pd[pde_idx] = pde_create (pt);
+          pt = palloc_get_page (PAL_ASSERT | PAL_ZERO); // 创建页表
+          pd[pde_idx] = pde_create (pt); // 写入页目录项
         }
 
-      pt[pte_idx] = pte_create_kernel (vaddr, !in_kernel_text);
+      pt[pte_idx] = pte_create_kernel (vaddr, !in_kernel_text); // 写入页表项，将内核段设为不可写的
     }
 
   /* Store the physical address of the page directory into CR3

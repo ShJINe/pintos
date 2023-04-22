@@ -18,7 +18,7 @@ pagedir_create (void)
 {
   uint32_t *pd = palloc_get_page (0);
   if (pd != NULL)
-    memcpy (pd, init_page_dir, PGSIZE);
+    memcpy (pd, init_page_dir, PGSIZE); // 装载内核的页目录
   return pd;
 }
 
@@ -33,18 +33,18 @@ pagedir_destroy (uint32_t *pd)
     return;
 
   ASSERT (pd != init_page_dir);
-  for (pde = pd; pde < pd + pd_no (PHYS_BASE); pde++)
+  for (pde = pd; pde < pd + pd_no (PHYS_BASE); pde++) // 从pd页表的最低地址开始，向上n个，n是3G用户空间分配的页目录项数，即1024 * 3/4
     if (*pde & PTE_P) 
       {
-        uint32_t *pt = pde_get_pt (*pde);
+        uint32_t *pt = pde_get_pt (*pde); // 找到一个页目录项对应的页表
         uint32_t *pte;
         
         for (pte = pt; pte < pt + PGSIZE / sizeof *pte; pte++)
           if (*pte & PTE_P) 
-            palloc_free_page (pte_get_page (*pte));
-        palloc_free_page (pt);
+            palloc_free_page (pte_get_page (*pte));  // 释放页表项对应的page
+        palloc_free_page (pt); // 然后释放该页表
       }
-  palloc_free_page (pd);
+  palloc_free_page (pd); // 最后释放页目录
 }
 
 /* Returns the address of the page table entry for virtual
@@ -65,12 +65,12 @@ lookup_page (uint32_t *pd, const void *vaddr, bool create)
 
   /* Check for a page table for VADDR.
      If one is missing, create one if requested. */
-  pde = pd + pd_no (vaddr);
+  pde = pd + pd_no (vaddr); // 看看vaddr在页目录pd中有没有被映射
   if (*pde == 0) 
     {
       if (create)
         {
-          pt = palloc_get_page (PAL_ZERO);
+          pt = palloc_get_page (PAL_ZERO); // 在内核空间中的kernel_pool中分配一个page
           if (pt == NULL) 
             return NULL; 
       
@@ -103,7 +103,7 @@ pagedir_set_page (uint32_t *pd, void *upage, void *kpage, bool writable)
   ASSERT (pg_ofs (upage) == 0);
   ASSERT (pg_ofs (kpage) == 0);
   ASSERT (is_user_vaddr (upage));
-  ASSERT (vtop (kpage) >> PTSHIFT < init_ram_pages);
+  ASSERT (vtop (kpage) >> PTSHIFT < init_ram_pages); // kpage是个虚拟地址，在大于3G的位置
   ASSERT (pd != init_page_dir);
 
   pte = lookup_page (pd, upage, true);
@@ -218,7 +218,7 @@ pagedir_set_accessed (uint32_t *pd, const void *vpage, bool accessed)
    register. */
 void
 pagedir_activate (uint32_t *pd) 
-{
+{    
   if (pd == NULL)
     pd = init_page_dir;
 

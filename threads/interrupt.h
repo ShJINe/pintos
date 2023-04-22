@@ -17,7 +17,7 @@ enum intr_level intr_enable (void);
 enum intr_level intr_disable (void);
 
 /* Interrupt stack frame. */
-struct intr_frame
+struct intr_frame  // 低地址
   {
     /* Pushed by intr_entry in intr-stubs.S.
        These are the interrupted task's saved registers. */

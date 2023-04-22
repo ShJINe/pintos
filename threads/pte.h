@@ -39,6 +39,8 @@ static inline uintptr_t pd_no (const void *va) {
 }
 
 /* Page directory and page table entries.
+  
+  页表项和页目录项大小是由页表和页目录索引大小决定的，因为有2^10个页目录，因此一个page页中存放2^10个页表项，每个项大小4KB/2^10=4B=32位
 
    For more information see the section on page tables in the
    Pintos reference guide chapter, or [IA32-v3a] 3.7.6
