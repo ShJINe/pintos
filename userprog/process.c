@@ -33,7 +33,7 @@ process_execute (const char *file_name)
 
   /* Make a copy of FILE_NAME.
      Otherwise there's a race between the caller and load(). */
-  fn_copy = palloc_get_page (0);
+  fn_copy = palloc_get_page (0); // 将参数复制到这一页page中，在start_process中释放
   if (fn_copy == NULL)
     return TID_ERROR;
   strlcpy (fn_copy, file_name, PGSIZE);
@@ -50,11 +50,14 @@ process_execute (const char *file_name)
 static void
 start_process (void *file_name_)
 {
+  // printf("\n----file_name:%s",(char*)(file_name_));
+  // printf("\n----file_addr:%u",file_name_);
   char *file_name = file_name_;
   struct intr_frame if_;
   bool success;
 
   /* Initialize interrupt frame and load executable. */
+  /* 在内核栈创建了一个栈帧，用于返回用户态*/
   memset (&if_, 0, sizeof if_);
   if_.gs = if_.fs = if_.es = if_.ds = if_.ss = SEL_UDSEG;
   if_.cs = SEL_UCSEG;
@@ -72,6 +75,7 @@ start_process (void *file_name_)
      arguments on the stack in the form of a `struct intr_frame',
      we just point the stack pointer (%esp) to our stack frame
      and jump to it. */
+  // printf("\ni am here,with filen_ame:%u\n",file_name_);
   asm volatile ("movl %0, %%esp; jmp intr_exit" : : "g" (&if_) : "memory");
   NOT_REACHED ();
 }
@@ -88,6 +92,7 @@ start_process (void *file_name_)
 int
 process_wait (tid_t child_tid UNUSED) 
 {
+  while (true);
   return -1;
 }
 
@@ -195,7 +200,7 @@ struct Elf32_Phdr
 #define PF_W 2          /* Writable. */
 #define PF_R 4          /* Readable. */
 
-static bool setup_stack (void **esp);
+static bool setup_stack (void **esp, int argc, char* argv[]);
 static bool validate_segment (const struct Elf32_Phdr *, struct file *);
 static bool load_segment (struct file *file, off_t ofs, uint8_t *upage,
                           uint32_t read_bytes, uint32_t zero_bytes,
@@ -221,11 +226,25 @@ load (const char *file_name, void (**eip) (void), void **esp)
     goto done;
   process_activate ();
 
+  /* 处理输入file_name字符串 */
+  int argc = 1;
+  char * argv[LOADER_ARGS_LEN] = {""};
+  argv[0] = (char *) file_name;
+  for (int i = 0; i < LOADER_ARGS_LEN / 2; i ++)
+  {
+    char* p = strchr(argv[i], ' ');
+    if (p == NULL)
+      break;
+    *p = '\0';
+    argv[i + 1] = p + 1;
+    argc ++;
+  }
+
   /* Open executable file. */
-  file = filesys_open (file_name);
+  file = filesys_open (argv[0]);
   if (file == NULL) 
     {
-      printf ("load: %s: open failed\n", file_name);
+      printf ("load: %s: open failed\n", argv[0]);
       goto done; 
     }
 
@@ -238,7 +257,7 @@ load (const char *file_name, void (**eip) (void), void **esp)
       || ehdr.e_phentsize != sizeof (struct Elf32_Phdr)
       || ehdr.e_phnum > 1024) 
     {
-      printf ("load: %s: error loading executable\n", file_name);
+      printf ("load: %s: error loading executable\n", argv[0]);
       goto done; 
     }
 
@@ -302,7 +321,7 @@ load (const char *file_name, void (**eip) (void), void **esp)
     }
 
   /* Set up stack. */
-  if (!setup_stack (esp))
+  if (!setup_stack (esp, argc, argv))
     goto done;
 
   /* Start address. */
@@ -427,7 +446,7 @@ load_segment (struct file *file, off_t ofs, uint8_t *upage,
 /* Create a minimal stack by mapping a zeroed page at the top of
    user virtual memory. */
 static bool
-setup_stack (void **esp) 
+setup_stack (void **esp, int argc, char* argv[]) 
 {
   uint8_t *kpage;
   bool success = false;
@@ -437,7 +456,39 @@ setup_stack (void **esp)
     {
       success = install_page (((uint8_t *) PHYS_BASE) - PGSIZE, kpage, true);
       if (success)
-        *esp = PHYS_BASE;
+        {
+          *esp = PHYS_BASE;
+          int len = 0;
+          /* 将字符串拷贝到堆栈顶部 */
+          for (int i = argc - 1; i >= 0 ; i --)
+          {
+            len = strlen(argv[i]) + 1;
+            *esp -= len;
+            strlcpy(*esp, argv[i], len);
+            argv[i] = *esp;
+          }
+          /* 将栈指针对齐 */
+          while ((int)(*esp) % 4 != 0)
+          {
+            *esp -= 1;
+          }
+          /* 保证argv[argc] = 0 */
+          *esp -= 4; 
+          /* argv[0] - argv[argc-1]*/
+          for (int i = argc - 1; i >= 0 ; i --)
+          {
+            *esp -= sizeof(char **);
+            *(char **)*esp = argv[i];
+          }
+          /* argv */
+          *esp -= sizeof(char ***);
+          *(char ***)*esp = *esp + 4;
+          /* argc */
+          *esp -= sizeof(int);
+          *(int *)*esp = argc;
+          /* return */
+          *esp -= 4;
+        }
       else
         palloc_free_page (kpage);
     }

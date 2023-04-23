@@ -84,8 +84,8 @@ main (void)
   bss_init (); 
 
   /* Break command line into arguments and parse options. */
-  argv = read_command_line ();
-  argv = parse_options (argv);
+  argv = read_command_line (); // -q run
+  argv = parse_options (argv); // run 
 
   /* Initialize ourselves as a thread so we can use locks,
      then enable console locking. */
@@ -195,12 +195,12 @@ paging_init (void)
 static char **
 read_command_line (void) 
 {
-  static char *argv[LOADER_ARGS_LEN / 2 + 1];
+  static char *argv[LOADER_ARGS_LEN / 2 + 1]; /* static 所以不在栈里 */
   char *p, *end;
   int argc;
   int i;
 
-  argc = *(uint32_t *) ptov (LOADER_ARG_CNT);
+  argc = *(uint32_t *) ptov (LOADER_ARG_CNT); // 此时已经有临时页表
   p = ptov (LOADER_ARGS);
   end = p + LOADER_ARGS_LEN;
   for (i = 0; i < argc; i++) 
@@ -216,12 +216,15 @@ read_command_line (void)
   /* Print kernel command line. */
   printf ("Kernel command line:");
   for (i = 0; i < argc; i++)
-    if (strchr (argv[i], ' ') == NULL)
+    if (strchr (argv[i], ' ') == NULL) // 找到第一次出现的空格字符
       printf (" %s", argv[i]);
     else
       printf (" '%s'", argv[i]);
   printf ("\n");
 
+  // printf("\n init argv: %u", &p);   // 在栈中
+  // printf("\n init argv: %u", argv); // 在数据段中，因为是static的
+  
   return argv;
 }
 

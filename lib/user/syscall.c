@@ -120,7 +120,7 @@ read (int fd, void *buffer, unsigned size)
 int
 write (int fd, const void *buffer, unsigned size)
 {
-  return syscall3 (SYS_WRITE, fd, buffer, size);
+  return syscall3 (SYS_WRITE, fd, buffer, size); // printf将与这个一起编译
 }
 
 void

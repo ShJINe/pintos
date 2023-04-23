@@ -93,7 +93,7 @@ intr_exit:
 	.data
 .globl intr_stubs
 intr_stubs:
-
+/* 此处是中断的入口点，在这之前已经根据中断向量号查到对应函数，并且如果发生优先级切换已经保存了寄存器esp和ss，并切换到内核环境 */
 /* This implements steps 1 and 2, described above, in the common
    case where we just push a 0 error code. */
 #define zero                                    \
