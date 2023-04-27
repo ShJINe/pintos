@@ -20,6 +20,9 @@
 
 static thread_func start_process NO_RETURN;
 static bool load (const char *cmdline, void (**eip) (void), void **esp);
+static struct thread * pid_get_thread (tid_t pid);
+static bool init_oft (struct thread *t);
+static void close_all_file(struct thread *t);
 
 /* Starts a new thread running a user program loaded from
    FILENAME.  The new thread may be scheduled (and may even exit)
@@ -33,15 +36,35 @@ process_execute (const char *file_name)
 
   /* Make a copy of FILE_NAME.
      Otherwise there's a race between the caller and load(). */
-  fn_copy = palloc_get_page (0); // 将参数复制到这一页page中，在start_process中释放
+  fn_copy = palloc_get_page (0); // 将参数复制到这一页page中，在start_process中释放，内核页，后面再分配用户页
   if (fn_copy == NULL)
     return TID_ERROR;
   strlcpy (fn_copy, file_name, PGSIZE);
 
   /* Create a new thread to execute FILE_NAME. */
   tid = thread_create (file_name, PRI_DEFAULT, start_process, fn_copy);
+  /* */
   if (tid == TID_ERROR)
     palloc_free_page (fn_copy); 
+  
+  /* --------wait-------- */
+  struct thread *t, *c;
+  enum intr_level old_level;
+  t = thread_current();
+  /* 等待子进程完成 */
+  t->wait_pid = tid;
+  old_level = intr_disable ();
+  thread_block();
+  intr_set_level (old_level);
+  /* wakeup&获得子进程状态 */
+  c = pid_get_thread(tid);
+  /* 检查是否退出（load失败） */
+  if (c == NULL ||c->status == THREAD_DYING)
+  {
+    palloc_free_page(c);
+    return -1;
+  }
+  /* 正常返回 */
   return tid;
 }
 
@@ -50,8 +73,10 @@ process_execute (const char *file_name)
 static void
 start_process (void *file_name_)
 {
-  // printf("\n----file_name:%s",(char*)(file_name_));
-  // printf("\n----file_addr:%u",file_name_);
+  /* 设置limit*/
+  thread_current()->limit_seg = PHYS_BASE;
+  thread_current()->user_thread = true;
+  /* */
   char *file_name = file_name_;
   struct intr_frame if_;
   bool success;
@@ -63,9 +88,11 @@ start_process (void *file_name_)
   if_.cs = SEL_UCSEG;
   if_.eflags = FLAG_IF | FLAG_MBS;
   success = load (file_name, &if_.eip, &if_.esp);
+  
+  success &= init_oft (thread_current());
 
   /* If load failed, quit. */
-  palloc_free_page (file_name);
+  palloc_free_page (file_name); /* 这是上面分配的页 */
   if (!success) 
     thread_exit ();
 
@@ -75,7 +102,8 @@ start_process (void *file_name_)
      arguments on the stack in the form of a `struct intr_frame',
      we just point the stack pointer (%esp) to our stack frame
      and jump to it. */
-  // printf("\ni am here,with filen_ame:%u\n",file_name_);
+  wakeup_parent(thread_current());
+  thread_yield();
   asm volatile ("movl %0, %%esp; jmp intr_exit" : : "g" (&if_) : "memory");
   NOT_REACHED ();
 }
@@ -90,10 +118,30 @@ start_process (void *file_name_)
    This function will be implemented in problem 2-2.  For now, it
    does nothing. */
 int
-process_wait (tid_t child_tid UNUSED) 
+process_wait (tid_t child_tid) 
 {
-  while (true);
-  return -1;
+  struct thread *t, *c;
+  int exit_status;
+  t = thread_current ();
+  c = pid_get_thread (child_tid);
+  /* 没找到wait的pid */
+  if (c == NULL) 
+    return -1;
+  /* 找到了pid对应的孩子 */
+  /* 如果孩子没有退出 */
+  if (c->status != THREAD_DYING)
+  {
+    /* 等待孩子退出 */
+    t->wait_pid = child_tid;
+    enum intr_level old_level;
+    old_level = intr_disable ();
+    thread_block ();
+    intr_set_level (old_level);
+  }
+  /* 回收返回信息 */
+  exit_status = c->exit_status;
+  palloc_free_page (c);
+  return exit_status;
 }
 
 /* Free the current process's resources. */
@@ -119,6 +167,14 @@ process_exit (void)
       pagedir_activate (NULL);
       pagedir_destroy (pd);
     }
+    
+  if (cur->user_thread)
+  {
+    close_all_file(cur);
+    palloc_free_page (cur->oft);
+    // printf("\nname exit:%s\n",cur->name);
+    printf("%s: exit(%d)\n",cur->name,cur->exit_status);
+  }
 }
 
 /* Sets up the CPU for running user code in the current
@@ -227,18 +283,23 @@ load (const char *file_name, void (**eip) (void), void **esp)
   process_activate ();
 
   /* 处理输入file_name字符串 */
-  int argc = 1;
-  char * argv[LOADER_ARGS_LEN] = {""};
-  argv[0] = (char *) file_name;
+  int argc = 0;
+  char *argv[LOADER_ARGS_LEN];
+  argv[argc] = (char *) file_name;
   for (int i = 0; i < LOADER_ARGS_LEN / 2; i ++)
   {
-    char* p = strchr(argv[i], ' ');
+    char* p = strchr(argv[argc], ' ');
+    if (p != NULL)
+      *p = '\0';
+    /* 判断能否接受字符串 */
+    if (strlen(argv[argc]) != 0)
+      argc ++;
     if (p == NULL)
       break;
-    *p = '\0';
-    argv[i + 1] = p + 1;
-    argc ++;
+    argv[argc] = p + 1;
   }
+  /* reset thread name*/
+  strlcpy (t->name, argv[0], sizeof (t->name));
 
   /* Open executable file. */
   file = filesys_open (argv[0]);
@@ -513,4 +574,45 @@ install_page (void *upage, void *kpage, bool writable)
      address, then map our page there. */
   return (pagedir_get_page (t->pagedir, upage) == NULL
           && pagedir_set_page (t->pagedir, upage, kpage, writable));
+}
+
+static struct thread *
+pid_get_thread (tid_t pid)
+{
+  struct list_elem *sibling;
+  struct thread *t = thread_current();
+  struct thread *c;
+  for (sibling = list_begin(&t->children); sibling != list_end(&t->children); sibling = list_next(sibling))
+  {
+    /* 如果是自己的孩子 */
+    c = list_entry(sibling, struct thread, sibling);
+    if (c->tid == pid)
+      return c;
+  }
+  return NULL;
+}
+
+static bool
+init_oft (struct thread *t)
+{
+  struct open_file_table *oft;
+  oft = palloc_get_page (PAL_ZERO);
+  if (oft == NULL) 
+    return false;
+  t->oft = oft;
+  return true;
+}
+
+static void
+close_all_file(struct thread *t)
+{
+  int fd;
+  for (fd = AVA_FD; fd < MAX_FD; fd++)
+  {
+    if (t->oft->file_exist[fd])
+    {
+      file_close(t->oft->file_list[fd]);
+      t->oft->file_exist[fd] = false;
+    }
+  }
 }

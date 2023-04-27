@@ -143,6 +143,14 @@ page_fault (struct intr_frame *f)
   /* Count page faults. */
   page_fault_cnt++;
 
+  if (f->eax == 0x1f)
+  {
+   f->eip = f->eip + 4;
+   f->eax = -1;
+   return ;
+  }
+  thread_exit();
+
   /* Determine cause. */
   not_present = (f->error_code & PF_P) == 0;
   write = (f->error_code & PF_W) != 0;
@@ -156,6 +164,11 @@ page_fault (struct intr_frame *f)
           not_present ? "not present" : "rights violation",
           write ? "writing" : "reading",
           user ? "user" : "kernel");
-  kill (f);
+  
+  // kill (f);
+  // f->eax = -1;
+  thread_exit (); 
+  // f->eip = (void *)0x20170208; // 需要修改返回地址，否则返回发生page fault的地址将重新导致中断
+  return;
 }
 

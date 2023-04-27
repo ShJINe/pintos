@@ -14,6 +14,15 @@ enum thread_status
     THREAD_DYING        /* About to be destroyed. */
   };
 
+/* open_file */
+#define MAX_FD 128
+#define AVA_FD 2
+struct open_file_table
+{
+   struct file* file_list[MAX_FD];
+   bool file_exist[MAX_FD];
+};
+
 /* Thread identifier type.
    You can redefine this to whatever type you like. */
 typedef int tid_t;
@@ -96,8 +105,22 @@ struct thread
 #ifdef USERPROG
     /* Owned by userprog/process.c. */
     uint32_t *pagedir;                  /* Page directory. */
+    
 #endif
-
+    int64_t ticks_blocked;
+    struct open_file_table *oft;
+    void* limit_seg;
+    tid_t wait_pid;
+    bool user_thread;
+    int exit_status;
+    /* */
+    struct thread *parent; /* real parent process */
+    /*
+    * children/sibling forms the list of my children plus the
+    * tasks I'm ptracing.
+    */
+    struct list children;	/* list of my children */
+    struct list_elem sibling;	/* linkage in my parent's children list */
     /* Owned by thread.c. */
     unsigned magic;                     /* Detects stack overflow. */
   };
@@ -137,5 +160,12 @@ int thread_get_nice (void);
 void thread_set_nice (int);
 int thread_get_recent_cpu (void);
 int thread_get_load_avg (void);
+
+struct file* fd_get_file (int fd);
+struct file* fd_remove_file (int fd);
+int file_set_fd (struct file* file);
+
+void blocked_thread_check (struct thread *t, void *aux UNUSED);
+void wakeup_parent (struct thread *);
 
 #endif /* threads/thread.h */

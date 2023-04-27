@@ -17,7 +17,7 @@ struct file
 struct file *
 file_open (struct inode *inode) 
 {
-  struct file *file = calloc (1, sizeof *file);
+  struct file *file = calloc (1, sizeof *file); // 在内存中放置file结构体
   if (inode != NULL && file != NULL)
     {
       file->inode = inode;

@@ -70,6 +70,8 @@ static void *alloc_frame (struct thread *, size_t size);
 static void schedule (void);
 void thread_schedule_tail (struct thread *prev);
 static tid_t allocate_tid (void);
+static void init_inherit (struct thread *t);
+static void inherit_orphan (struct thread *t);
 
 /* Initializes the threading system by transforming the code
    that's currently running into a thread.  This can't work in
@@ -96,6 +98,10 @@ thread_init (void)
   /* Set up a thread structure for the running thread. */
   initial_thread = running_thread ();
   init_thread (initial_thread, "main", PRI_DEFAULT);
+  /* inherit init*/
+  initial_thread->parent = NULL;
+  list_init (&initial_thread->children);
+  /* */ 
   initial_thread->status = THREAD_RUNNING;
   initial_thread->tid = allocate_tid ();
 }
@@ -176,11 +182,14 @@ thread_create (const char *name, int priority,
 
   /* Allocate thread. */
   t = palloc_get_page (PAL_ZERO); //在内核空间分配一个页面，得到的是低地址 这里拿到的是逻辑地址，不是虚拟地址也不是物理地址
+  
   if (t == NULL)
     return TID_ERROR;
 
   /* Initialize thread.初始化struct_thread */
   init_thread (t, name, priority);
+  init_inherit (t);
+
   tid = t->tid = allocate_tid ();
   // 该函数用于创建线程，区别于从ELF中创建线程映像
   // 该函数创建的线程的代码来自已经载入的kernel
@@ -291,13 +300,20 @@ thread_exit (void)
 #ifdef USERPROG
   process_exit ();
 #endif
-
   /* Remove thread from all threads list, set our status to dying,
      and schedule another process.  That process will destroy us
      when it calls thread_schedule_tail(). */
   intr_disable ();
   list_remove (&thread_current()->allelem);
-  thread_current ()->status = THREAD_DYING;
+  /* */
+  struct thread *t = thread_current ();
+  /* */
+  t->status = THREAD_DYING;
+  /* 唤醒等待的父进程 */
+  wakeup_parent(t);
+  /* 将子进程挂靠给init */
+  inherit_orphan(t);
+  /* 回收分配的资源，除了struct thread，变为僵尸线程*/
   schedule ();
   NOT_REACHED ();
 }
@@ -469,6 +485,12 @@ init_thread (struct thread *t, const char *name, int priority)
   strlcpy (t->name, name, sizeof t->name);
   t->stack = (uint8_t *) t + PGSIZE;
   t->priority = priority;
+  t->limit_seg = (void*)0xffffffff;
+  t->ticks_blocked = 0;
+  t->user_thread = false;
+  t->exit_status = -1;
+  t->wait_pid = -1;
+  t->oft = NULL;
   t->magic = THREAD_MAGIC;
 
   old_level = intr_disable ();
@@ -537,7 +559,6 @@ thread_schedule_tail (struct thread *prev)
   /* Activate the new address space. */
   process_activate ();
 #endif
-
   /* If the thread we switched from is dying, destroy its struct
      thread.  This must happen late so that thread_exit() doesn't
      pull out the rug under itself.  (We don't free
@@ -546,7 +567,7 @@ thread_schedule_tail (struct thread *prev)
   if (prev != NULL && prev->status == THREAD_DYING && prev != initial_thread) 
     {
       ASSERT (prev != cur);
-      palloc_free_page (prev);
+      // palloc_free_page (prev);
     }
 }
 
@@ -590,3 +611,93 @@ allocate_tid (void)
 /* Offset of `stack' member within `struct thread'.
    Used by switch.S, which can't figure it out on its own. */
 uint32_t thread_stack_ofs = offsetof (struct thread, stack);
+
+/*---------------------------------------*/
+/* Check the blocked thread */
+void
+blocked_thread_check (struct thread *t, void *aux UNUSED)
+{
+  if (t->status == THREAD_BLOCKED && t->ticks_blocked > 0)
+  {
+      t->ticks_blocked--;
+      if (t->ticks_blocked == 0)
+      {
+          thread_unblock(t);
+      }
+  }
+}
+
+int 
+file_set_fd (struct file* file)
+{
+  struct thread *t = thread_current();
+  for (int fd = AVA_FD; fd < MAX_FD; fd ++)
+  {
+    if (!t->oft->file_exist[fd])
+    {
+      t->oft->file_exist[fd] = true;
+      t->oft->file_list[fd] = file;
+      return fd;
+    }
+  }
+  return -1;
+}
+
+struct file*
+fd_remove_file (int fd)
+{
+  struct thread *t = thread_current();
+  if (fd < AVA_FD || fd >= MAX_FD || !t->oft->file_exist[fd])
+    return NULL;
+  struct file *file = t->oft->file_list[fd];
+  t->oft->file_list[fd] = NULL;
+  t->oft->file_exist[fd] = false;
+  return file;
+}
+
+struct file* 
+fd_get_file (int fd)
+{
+  struct thread *t = thread_current();
+  if (fd < AVA_FD || fd >= MAX_FD ||!t->oft->file_exist[fd])
+    return NULL;
+  return t->oft->file_list[fd];
+}
+
+/* initial thread 不执行该函数*/
+static void 
+init_inherit (struct thread *t)
+{
+  struct thread *r = thread_current ();
+  t->parent = r;
+
+  list_push_back (&r->children, &t->sibling); /* 将自己放入父亲的list内 */
+  list_init (&t->children); /* 初始化自己的children list */
+}
+
+void
+wakeup_parent (struct thread *t)
+{
+  struct thread *p = t->parent;
+  if (p->status == THREAD_BLOCKED && p->wait_pid == t->tid)
+  {
+    p->wait_pid = -1;
+    thread_unblock(p);
+  }
+}
+
+static void 
+inherit_orphan (struct thread *t)
+{
+  struct thread *c;
+  while (!list_empty(&t->children))
+  {
+    /* 获得孩子节点 */
+    c = list_entry(list_pop_front(&t->children), struct thread, elem);
+    /* 将parent改为initial thread*/
+    c->parent = initial_thread;
+    /* 加入initial thread的children*/
+    list_push_back(&initial_thread->children, &c->elem);
+  }
+}
+

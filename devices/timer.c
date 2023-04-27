@@ -171,6 +171,7 @@ static void
 timer_interrupt (struct intr_frame *args UNUSED)
 {
   ticks++;
+  thread_foreach (blocked_thread_check, NULL);
   thread_tick ();
 }
 

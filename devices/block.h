@@ -11,7 +11,7 @@
 #define BLOCK_SECTOR_SIZE 512
 
 /* Index of a block device sector.
-   Good enough for devices up to 2 TB. */
+   Good enough for devices up to 2 TB.  2^32*2^10 = 2T*/
 typedef uint32_t block_sector_t;
 
 /* Format specifier for printf(), e.g.:
