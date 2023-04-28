@@ -19,8 +19,8 @@ enum thread_status
 #define AVA_FD 2
 struct open_file_table
 {
-   struct file* file_list[MAX_FD];
-   bool file_exist[MAX_FD];
+   struct file* file_list[MAX_FD + 1];
+   bool file_exist[MAX_FD + 1];
 };
 
 /* Thread identifier type.

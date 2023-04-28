@@ -307,13 +307,12 @@ thread_exit (void)
   list_remove (&thread_current()->allelem);
   /* */
   struct thread *t = thread_current ();
-  /* */
-  t->status = THREAD_DYING;
   /* 唤醒等待的父进程 */
   wakeup_parent(t);
   /* 将子进程挂靠给init */
   inherit_orphan(t);
   /* 回收分配的资源，除了struct thread，变为僵尸线程*/
+  t->status = THREAD_DYING;
   schedule ();
   NOT_REACHED ();
 }
@@ -480,17 +479,23 @@ init_thread (struct thread *t, const char *name, int priority)
   ASSERT (PRI_MIN <= priority && priority <= PRI_MAX);
   ASSERT (name != NULL);
 
+  /* tid -> thread_create */
   memset (t, 0, sizeof *t);
-  t->status = THREAD_BLOCKED;
-  strlcpy (t->name, name, sizeof t->name);
+  t->status = THREAD_BLOCKED;              /* unblock */
+  strlcpy (t->name, name, sizeof t->name); /* start_process*/
   t->stack = (uint8_t *) t + PGSIZE;
   t->priority = priority;
-  t->limit_seg = (void*)0xffffffff;
-  t->ticks_blocked = 0;
-  t->user_thread = false;
-  t->exit_status = -1;
+  /* all_elem -> below*/
+  /* elem -> thread_create.thread_unblock */
+  /* pagedir -> */
+  t->ticks_blocked = 0; 
+  t->oft = NULL;                           /* start_process*/
+  t->limit_seg = (void*)0xffffffff;        /* start_process*/
   t->wait_pid = -1;
-  t->oft = NULL;
+  t->user_thread = false;                  /* start_process*/
+  t->exit_status = -1;
+  t->parent = NULL;                        /* initial_thread 不进行init_inherit */
+  /* parent, children, sibling -> init_inherit*/
   t->magic = THREAD_MAGIC;
 
   old_level = intr_disable ();
@@ -679,7 +684,7 @@ void
 wakeup_parent (struct thread *t)
 {
   struct thread *p = t->parent;
-  if (p->status == THREAD_BLOCKED && p->wait_pid == t->tid)
+  if (p != NULL && p->status == THREAD_BLOCKED && p->wait_pid == t->tid)
   {
     p->wait_pid = -1;
     thread_unblock(p);
@@ -689,15 +694,17 @@ wakeup_parent (struct thread *t)
 static void 
 inherit_orphan (struct thread *t)
 {
+  if (t == initial_thread)
+    return ;
   struct thread *c;
   while (!list_empty(&t->children))
   {
     /* 获得孩子节点 */
-    c = list_entry(list_pop_front(&t->children), struct thread, elem);
+    c = list_entry(list_pop_front(&t->children), struct thread, sibling);
     /* 将parent改为initial thread*/
     c->parent = initial_thread;
     /* 加入initial thread的children*/
-    list_push_back(&initial_thread->children, &c->elem);
+    list_push_back(&initial_thread->children, &c->sibling);
   }
 }
 

@@ -25,6 +25,9 @@
 #define ERROR_CODE -1
 #define MAX_KERNEL_BUF 1024
 
+#define MAX_NUM(a, b) ((a >= b)? a: b)
+#define MIN_NUM(a, b) ((a <= b)? a: b)
+
 
 static void syscall_handler (struct intr_frame *);
 
@@ -128,7 +131,7 @@ syscall_halt_func (struct intr_frame *f UNUSED)
 static void
 syscall_exit_func (struct intr_frame *f)
 {
-  if (access_ok(f->esp, 1 * ARG_SIZE))
+  if (access_ok(f->esp + ARG_SIZE, 1 * ARG_SIZE))
   {
     int status = get_user_4(f->esp + ARG_0);
     if (status != -1)
@@ -146,7 +149,7 @@ syscall_exit_func (struct intr_frame *f)
 static void
 syscall_exec_func (struct intr_frame *f)
 {
-  if (access_ok(f->esp, 1 * ARG_SIZE))
+  if (access_ok(f->esp + ARG_SIZE, 1 * ARG_SIZE))
   {
     const char * file_name = (const char *)get_user_4(f->esp + ARG_0);
     if (file_name != ERROR_ADDR)
@@ -173,7 +176,7 @@ syscall_exec_func (struct intr_frame *f)
 static void
 syscall_wait_func (struct intr_frame *f)
 {
-  if (access_ok(f->esp, 1 * ARG_SIZE))
+  if (access_ok(f->esp + ARG_SIZE, 1 * ARG_SIZE))
   {
     tid_t pid = get_user_4(f->esp + ARG_0);
     if (pid != ERROR_CODE)
@@ -190,7 +193,7 @@ syscall_wait_func (struct intr_frame *f)
 static void
 syscall_create_func (struct intr_frame *f)
 {
-  if (access_ok(f->esp, 2 * ARG_SIZE))
+  if (access_ok(f->esp + ARG_SIZE, 2 * ARG_SIZE))
   {
     const char *file_name = (const char *)get_user_4(f->esp + ARG_0);
     int initial_size = get_user_4(f->esp + ARG_1);
@@ -218,7 +221,7 @@ syscall_create_func (struct intr_frame *f)
 static void
 syscall_remove_func (struct intr_frame *f)
 {
-  if (access_ok(f->esp, 1 * ARG_SIZE))
+  if (access_ok(f->esp + ARG_SIZE, 1 * ARG_SIZE))
   {
     const char *file_name = (const char *)get_user_4(f->esp + ARG_0);
     if (file_name != ERROR_ADDR)
@@ -245,7 +248,7 @@ syscall_remove_func (struct intr_frame *f)
 static void 
 syscall_open_fun (struct intr_frame *f)
 {
-  if (access_ok(f->esp, 1 * ARG_SIZE))
+  if (access_ok(f->esp + ARG_SIZE, 1 * ARG_SIZE))
   {
     const char *file_name = (const char *)get_user_4(f->esp + ARG_0);
     if (file_name != ERROR_ADDR)
@@ -261,6 +264,7 @@ syscall_open_fun (struct intr_frame *f)
           struct file* file = filesys_open(kernel_buf);
           if (file != NULL)
           {
+            // protect_exec (file); /* 将可执行文件设置为拒绝写入 */
             f->eax = file_set_fd(file);
             return ;
           }
@@ -276,7 +280,7 @@ syscall_open_fun (struct intr_frame *f)
 static void
 syscall_filesize_func (struct intr_frame *f)
 {
-  if (access_ok(f->esp, 1 * ARG_SIZE))
+  if (access_ok(f->esp + ARG_SIZE, 1 * ARG_SIZE))
   {
     int fd = get_user_4(f->esp + ARG_0);
     if (fd != ERROR_CODE)
@@ -297,20 +301,17 @@ syscall_filesize_func (struct intr_frame *f)
 static void 
 syscall_read_func (struct intr_frame *f)
 {
-  if (access_ok(f->esp, 3 * ARG_SIZE))
+  if (access_ok(f->esp + ARG_SIZE, 3 * ARG_SIZE))
   {
-    // printf("\n1\n");
     int fd = get_user_4(f->esp + ARG_0);
     char *buf = (char *)get_user_4(f->esp + ARG_1);
     int size = get_user_4(f->esp + ARG_2);
     if (fd != ERROR_CODE && size != ERROR_CODE && size < MAX_KERNEL_BUF && buf != ERROR_ADDR && access_ok(buf, size))
     {
-      // printf("\n2\n");
       char kernel_buf [MAX_KERNEL_BUF];
       int read_count = 0;
       if (fd == 0)
       {
-        // printf("\n3\n");
         for (read_count = 0; read_count < size; read_count++)
         {
           kernel_buf[read_count] = input_getc();
@@ -320,11 +321,9 @@ syscall_read_func (struct intr_frame *f)
       }
       else
       {
-        // printf("\n4\n");
         struct file *file = fd_get_file(fd);
         if (file != NULL)
         {
-          // printf("\n5\n");
           read_count = file_read(file, kernel_buf, size); // 未完成：返回-1文件不可读取
           f->eax = put_user_str(buf, kernel_buf, read_count);
           return ;
@@ -341,28 +340,53 @@ syscall_read_func (struct intr_frame *f)
 static void
 syscall_write_func (struct intr_frame *f)
 {
-  if (access_ok(f->esp, 3 * ARG_SIZE))
+  if (access_ok(f->esp + ARG_SIZE, 3 * ARG_SIZE))
   {
     int fd = get_user_4(f->esp + ARG_0);
     const char *buf = (const char*)get_user_4(f->esp + ARG_1);
     int size = get_user_4(f->esp + ARG_2);
-    if (fd != ERROR_CODE && size != ERROR_CODE && size < MAX_KERNEL_BUF && buf != ERROR_ADDR && access_ok(buf, strlen(buf)))
+    // printf("\nsize = %d\n", size);
+    if (fd != ERROR_CODE && size != ERROR_CODE && buf != ERROR_ADDR)
     {
-      char kernel_buf[MAX_KERNEL_BUF];
-      int write_count = get_user_str (buf, kernel_buf, size);
-      if (fd == 1)
+      // size = MIN_NUM((int)strlen(buf), size);
+      if (access_ok(buf, size))
       {
-        putbuf(kernel_buf, write_count);
-        f->eax = write_count;
-        return ;
-      }
-      else
-      {
-        struct file *file = fd_get_file(fd);
-        if (file != NULL)
+        int read_count, write_count, all_write_count = 0;
+        char kernel_buf[MAX_KERNEL_BUF];
+        if (fd == 1)
         {
-          f->eax = file_write(file, kernel_buf, write_count);
+          read_count = MIN_NUM(size - all_write_count, MAX_KERNEL_BUF);
+          while (read_count != 0)
+          {
+            write_count = get_user_str (buf + all_write_count, kernel_buf, read_count);
+            putbuf(kernel_buf, write_count);
+            all_write_count += write_count;
+            if (write_count < read_count)
+              break ;
+            read_count = MIN_NUM(size - all_write_count, MAX_KERNEL_BUF);
+          }
+          f->eax = all_write_count;
           return ;
+        }
+        else
+        {
+          struct file *file = fd_get_file(fd);
+          if (file != NULL)
+          {
+            read_count = MIN_NUM(size - all_write_count, MAX_KERNEL_BUF);
+            while (read_count != 0 )
+            {
+              write_count = get_user_str (buf + all_write_count, kernel_buf, read_count);
+              write_count = file_write(file, kernel_buf, write_count); /* 写拒绝 or 超过文件大小 */
+              all_write_count += write_count;
+              if (write_count < read_count)
+                break ;
+              read_count = MIN_NUM(size - all_write_count, MAX_KERNEL_BUF);
+            }
+            // printf("\nall_write_count = %d\n", all_write_count);
+            f->eax = all_write_count;
+            return ;
+          }
         }
       }
     }
@@ -375,7 +399,7 @@ syscall_write_func (struct intr_frame *f)
 static void
 syscall_seek_func (struct intr_frame *f)
 {
-  if (access_ok(f->esp, 2 * ARG_SIZE))
+  if (access_ok(f->esp + ARG_SIZE, 2 * ARG_SIZE))
   {
     int fd = get_user_4(f->esp + ARG_0);
     int position = *(int *)(f->esp + ARG_1);
@@ -396,7 +420,7 @@ syscall_seek_func (struct intr_frame *f)
 static void
 syscall_tell_func (struct intr_frame *f)
 {
-  if (access_ok(f->esp, 1 * ARG_SIZE))
+  if (access_ok(f->esp + ARG_SIZE, 1 * ARG_SIZE))
   {
     int fd = get_user_4(f->esp + ARG_0);
     if (fd != ERROR_CODE)
@@ -417,7 +441,7 @@ syscall_tell_func (struct intr_frame *f)
 static void
 syscall_close_func (struct intr_frame *f)
 {
-  if (access_ok(f->esp, 1 * ARG_SIZE))
+  if (access_ok(f->esp + ARG_SIZE, 1 * ARG_SIZE))
   {
     int fd = get_user_4(f->esp + ARG_0);
     if (fd != ERROR_CODE)
@@ -512,7 +536,7 @@ syscall_init (void)
 static void
 syscall_handler (struct intr_frame *f UNUSED) 
 {
-  if (access_ok(f->esp + MEMBER, 1 * ARG_SIZE))
+  if (access_ok(f->esp, 1 * ARG_SIZE))
   {
     int member = get_user_4(f->esp + MEMBER);
     // printf("nnnn:%d\n",member);

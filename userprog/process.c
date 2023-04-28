@@ -23,6 +23,7 @@ static bool load (const char *cmdline, void (**eip) (void), void **esp);
 static struct thread * pid_get_thread (tid_t pid);
 static bool init_oft (struct thread *t);
 static void close_all_file(struct thread *t);
+static void deny_write_me (struct file *file);
 
 /* Starts a new thread running a user program loaded from
    FILENAME.  The new thread may be scheduled (and may even exit)
@@ -61,6 +62,7 @@ process_execute (const char *file_name)
   /* 检查是否退出（load失败） */
   if (c == NULL ||c->status == THREAD_DYING)
   {
+    list_remove(&c->sibling);
     palloc_free_page(c);
     return -1;
   }
@@ -87,9 +89,9 @@ start_process (void *file_name_)
   if_.gs = if_.fs = if_.es = if_.ds = if_.ss = SEL_UDSEG;
   if_.cs = SEL_UCSEG;
   if_.eflags = FLAG_IF | FLAG_MBS;
-  success = load (file_name, &if_.eip, &if_.esp);
+  success = init_oft (thread_current());
   
-  success &= init_oft (thread_current());
+  success &= load (file_name, &if_.eip, &if_.esp);
 
   /* If load failed, quit. */
   palloc_free_page (file_name); /* 这是上面分配的页 */
@@ -140,6 +142,7 @@ process_wait (tid_t child_tid)
   }
   /* 回收返回信息 */
   exit_status = c->exit_status;
+  list_remove (&c->sibling);
   palloc_free_page (c);
   return exit_status;
 }
@@ -392,7 +395,8 @@ load (const char *file_name, void (**eip) (void), void **esp)
 
  done:
   /* We arrive here whether the load is successful or not. */
-  file_close (file);
+  deny_write_me (file);
+  // file_close (file); /* 无论成功与否都不关闭file， */
   return success;
 }
 
@@ -607,7 +611,7 @@ static void
 close_all_file(struct thread *t)
 {
   int fd;
-  for (fd = AVA_FD; fd < MAX_FD; fd++)
+  for (fd = AVA_FD; fd < MAX_FD + 1; fd++)
   {
     if (t->oft->file_exist[fd])
     {
@@ -616,3 +620,24 @@ close_all_file(struct thread *t)
     }
   }
 }
+
+static void 
+deny_write_me (struct file *file)
+{
+  struct thread *t = thread_current();
+  t->oft->file_exist[MAX_FD] = true;
+  t->oft->file_list[MAX_FD] = file;
+  if (file != NULL)
+    file_deny_write(file);
+}
+
+// void
+// protect_exec (struct file *file)
+// {
+//   struct Elf32_Ehdr ehdr;
+//   if (file_read (file, &ehdr, sizeof ehdr) == sizeof ehdr && !memcmp (ehdr.e_ident, "\177ELF\1\1\1", 7))
+//   {
+//     file_deny_write (file);
+//   }
+//   file_seek (file, 0);
+// }
