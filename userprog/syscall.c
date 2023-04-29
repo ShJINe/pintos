@@ -155,6 +155,7 @@ syscall_exec_func (struct intr_frame *f)
     if (file_name != ERROR_ADDR)
     {
       int name_len = strlen(file_name);
+      // printf("file_name:%s", file_name);
       if (access_ok(file_name, name_len) && name_len < MAX_KERNEL_BUF)
       {
         char kernel_buf[MAX_KERNEL_BUF];
@@ -261,6 +262,7 @@ syscall_open_fun (struct intr_frame *f)
         kernel_buf[count] = '\0';
         if (count == name_len)
         {
+          // printf("open:%s\n",file_name);
           struct file* file = filesys_open(kernel_buf);
           if (file != NULL)
           {
@@ -306,17 +308,23 @@ syscall_read_func (struct intr_frame *f)
     int fd = get_user_4(f->esp + ARG_0);
     char *buf = (char *)get_user_4(f->esp + ARG_1);
     int size = get_user_4(f->esp + ARG_2);
-    if (fd != ERROR_CODE && size != ERROR_CODE && size < MAX_KERNEL_BUF && buf != ERROR_ADDR && access_ok(buf, size))
+    if (fd != ERROR_CODE && size != ERROR_CODE && buf != ERROR_ADDR && access_ok(buf, size))
     {
+      int read_count, write_count, all_read_count = 0;
       char kernel_buf [MAX_KERNEL_BUF];
-      int read_count = 0;
       if (fd == 0)
       {
-        for (read_count = 0; read_count < size; read_count++)
+        read_count = MIN_NUM(size-all_read_count, MAX_KERNEL_BUF);
+        int i;
+        while (read_count != 0)
         {
-          kernel_buf[read_count] = input_getc();
+          for (i = 0; i < read_count; i ++)
+            kernel_buf[i] = input_getc();
+          write_count = put_user_str(buf + all_read_count, kernel_buf, read_count);
+          all_read_count += write_count;
+          read_count = MIN_NUM(size - all_read_count, MAX_KERNEL_BUF);
         }
-        f->eax = put_user_str(buf, kernel_buf, read_count);
+        f->eax = all_read_count;
         return ;
       }
       else
@@ -324,8 +332,17 @@ syscall_read_func (struct intr_frame *f)
         struct file *file = fd_get_file(fd);
         if (file != NULL)
         {
-          read_count = file_read(file, kernel_buf, size); // 未完成：返回-1文件不可读取
-          f->eax = put_user_str(buf, kernel_buf, read_count);
+          read_count = MIN_NUM(size-all_read_count, MAX_KERNEL_BUF);
+          while (read_count != 0)
+          {
+            write_count = file_read(file, kernel_buf, read_count);
+            write_count = put_user_str(buf + all_read_count, kernel_buf, write_count);
+            all_read_count += write_count;
+            if (write_count < read_count)
+              break;
+            read_count = MIN_NUM(size-all_read_count, MAX_KERNEL_BUF);
+          }
+          f->eax = all_read_count;
           return ;
         }
       }
@@ -345,48 +362,43 @@ syscall_write_func (struct intr_frame *f)
     int fd = get_user_4(f->esp + ARG_0);
     const char *buf = (const char*)get_user_4(f->esp + ARG_1);
     int size = get_user_4(f->esp + ARG_2);
-    // printf("\nsize = %d\n", size);
-    if (fd != ERROR_CODE && size != ERROR_CODE && buf != ERROR_ADDR)
+    if (fd != ERROR_CODE && size != ERROR_CODE && buf != ERROR_ADDR && access_ok(buf, size))
     {
-      // size = MIN_NUM((int)strlen(buf), size);
-      if (access_ok(buf, size))
+      int read_count, write_count, all_write_count = 0;
+      char kernel_buf[MAX_KERNEL_BUF];
+      if (fd == 1)
       {
-        int read_count, write_count, all_write_count = 0;
-        char kernel_buf[MAX_KERNEL_BUF];
-        if (fd == 1)
+        read_count = MIN_NUM(size - all_write_count, MAX_KERNEL_BUF);
+        while (read_count != 0)
+        {
+          write_count = get_user_str (buf + all_write_count, kernel_buf, read_count);
+          putbuf(kernel_buf, write_count);
+          all_write_count += write_count;
+          if (write_count < read_count)
+            break ;
+          read_count = MIN_NUM(size - all_write_count, MAX_KERNEL_BUF);
+        }
+        f->eax = all_write_count;
+        return ;
+      }
+      else
+      {
+        struct file *file = fd_get_file(fd);
+        if (file != NULL)
         {
           read_count = MIN_NUM(size - all_write_count, MAX_KERNEL_BUF);
-          while (read_count != 0)
+          while (read_count != 0 )
           {
-            write_count = get_user_str (buf + all_write_count, kernel_buf, read_count);
-            putbuf(kernel_buf, write_count);
+            write_count = get_user_str (buf + all_write_count, kernel_buf, read_count); /* 读失败 page fault*/
+            write_count = file_write(file, kernel_buf, write_count); /* 写拒绝 or 超过文件大小 */
             all_write_count += write_count;
             if (write_count < read_count)
               break ;
             read_count = MIN_NUM(size - all_write_count, MAX_KERNEL_BUF);
           }
+          // printf("\nall_write_count = %d\n", all_write_count);
           f->eax = all_write_count;
           return ;
-        }
-        else
-        {
-          struct file *file = fd_get_file(fd);
-          if (file != NULL)
-          {
-            read_count = MIN_NUM(size - all_write_count, MAX_KERNEL_BUF);
-            while (read_count != 0 )
-            {
-              write_count = get_user_str (buf + all_write_count, kernel_buf, read_count);
-              write_count = file_write(file, kernel_buf, write_count); /* 写拒绝 or 超过文件大小 */
-              all_write_count += write_count;
-              if (write_count < read_count)
-                break ;
-              read_count = MIN_NUM(size - all_write_count, MAX_KERNEL_BUF);
-            }
-            // printf("\nall_write_count = %d\n", all_write_count);
-            f->eax = all_write_count;
-            return ;
-          }
         }
       }
     }

@@ -137,7 +137,7 @@ inode_open (block_sector_t sector)
   inode->open_cnt = 1;
   inode->deny_write_cnt = 0;
   inode->removed = false;
-  block_read (fs_device, inode->sector, &inode->data);
+  block_read (fs_device, inode->sector, &inode->data); /* 从磁盘中读取inode_disk到inode->data的位置 */
   return inode;
 }
 
@@ -204,19 +204,19 @@ inode_read_at (struct inode *inode, void *buffer_, off_t size, off_t offset)
   off_t bytes_read = 0;
   uint8_t *bounce = NULL;
 
-  while (size > 0) 
+  while (size > 0)      /* 直到size = 0 */
     {
       /* Disk sector to read, starting byte offset within sector. */
-      block_sector_t sector_idx = byte_to_sector (inode, offset);
-      int sector_ofs = offset % BLOCK_SECTOR_SIZE;
+      block_sector_t sector_idx = byte_to_sector (inode, offset);  /* 块选择子 */
+      int sector_ofs = offset % BLOCK_SECTOR_SIZE;                 /* 块内偏移 */
 
       /* Bytes left in inode, bytes left in sector, lesser of the two. */
-      off_t inode_left = inode_length (inode) - offset;
-      int sector_left = BLOCK_SECTOR_SIZE - sector_ofs;
+      off_t inode_left = inode_length (inode) - offset;           /* inode中剩余空间 */
+      int sector_left = BLOCK_SECTOR_SIZE - sector_ofs;           /* 第一块中的剩余空间 */
       int min_left = inode_left < sector_left ? inode_left : sector_left;
 
       /* Number of bytes to actually copy out of this sector. */
-      int chunk_size = size < min_left ? size : min_left;
+      int chunk_size = size < min_left ? size : min_left;         /* 读取size，block_left, inode_left取最小*/
       if (chunk_size <= 0)
         break;
 
