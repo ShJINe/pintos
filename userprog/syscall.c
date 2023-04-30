@@ -13,6 +13,7 @@
 #include "lib/user/syscall.h"
 #include "devices/shutdown.h"
 #include "process.h"
+#include "threads/synch.h"
 
 #define MEMBER 0
 #define ARG_0  4
@@ -30,9 +31,9 @@
 
 
 static void syscall_handler (struct intr_frame *);
-
 typedef void syscall_server_func (struct intr_frame *);
 static syscall_server_func* syscall_list[20];
+extern struct lock file_lock;
 
 static bool 
 access_ok (const void *addr, int size)
@@ -208,7 +209,9 @@ syscall_create_func (struct intr_frame *f)
         kernel_buf[count] = '\0';
         if (count == name_len)
         {
+          lock_acquire(&file_lock);
           f->eax = filesys_create (kernel_buf, initial_size);
+          lock_release(&file_lock);
           return ;
         }
       }
@@ -235,7 +238,9 @@ syscall_remove_func (struct intr_frame *f)
         kernel_buf[count] = '\0';
         if (count == name_len)
         {
+          lock_acquire(&file_lock);
           f->eax = filesys_remove (kernel_buf);
+          lock_release(&file_lock);
           return ;
         }
       }
@@ -263,10 +268,11 @@ syscall_open_fun (struct intr_frame *f)
         if (count == name_len)
         {
           // printf("open:%s\n",file_name);
+          lock_acquire(&file_lock);
           struct file* file = filesys_open(kernel_buf);
+          lock_release(&file_lock);
           if (file != NULL)
           {
-            // protect_exec (file); /* 将可执行文件设置为拒绝写入 */
             f->eax = file_set_fd(file);
             return ;
           }
@@ -290,7 +296,9 @@ syscall_filesize_func (struct intr_frame *f)
       struct file* file = fd_get_file (fd);
       if (file != NULL)
       {
+        lock_acquire(&file_lock);
         f->eax = file_length (file);
+        lock_release(&file_lock);
         return ;
       }
     }
@@ -314,6 +322,7 @@ syscall_read_func (struct intr_frame *f)
       char kernel_buf [MAX_KERNEL_BUF];
       if (fd == 0)
       {
+        lock_acquire(&file_lock);
         read_count = MIN_NUM(size-all_read_count, MAX_KERNEL_BUF);
         int i;
         while (read_count != 0)
@@ -325,6 +334,7 @@ syscall_read_func (struct intr_frame *f)
           read_count = MIN_NUM(size - all_read_count, MAX_KERNEL_BUF);
         }
         f->eax = all_read_count;
+        lock_release(&file_lock);
         return ;
       }
       else
@@ -332,6 +342,7 @@ syscall_read_func (struct intr_frame *f)
         struct file *file = fd_get_file(fd);
         if (file != NULL)
         {
+          lock_acquire(&file_lock);
           read_count = MIN_NUM(size-all_read_count, MAX_KERNEL_BUF);
           while (read_count != 0)
           {
@@ -343,6 +354,7 @@ syscall_read_func (struct intr_frame *f)
             read_count = MIN_NUM(size-all_read_count, MAX_KERNEL_BUF);
           }
           f->eax = all_read_count;
+          lock_release(&file_lock);
           return ;
         }
       }
@@ -368,6 +380,7 @@ syscall_write_func (struct intr_frame *f)
       char kernel_buf[MAX_KERNEL_BUF];
       if (fd == 1)
       {
+        lock_acquire(&file_lock);
         read_count = MIN_NUM(size - all_write_count, MAX_KERNEL_BUF);
         while (read_count != 0)
         {
@@ -379,6 +392,7 @@ syscall_write_func (struct intr_frame *f)
           read_count = MIN_NUM(size - all_write_count, MAX_KERNEL_BUF);
         }
         f->eax = all_write_count;
+        lock_release(&file_lock);
         return ;
       }
       else
@@ -386,6 +400,7 @@ syscall_write_func (struct intr_frame *f)
         struct file *file = fd_get_file(fd);
         if (file != NULL)
         {
+          lock_acquire(&file_lock);
           read_count = MIN_NUM(size - all_write_count, MAX_KERNEL_BUF);
           while (read_count != 0 )
           {
@@ -398,6 +413,7 @@ syscall_write_func (struct intr_frame *f)
           }
           // printf("\nall_write_count = %d\n", all_write_count);
           f->eax = all_write_count;
+          lock_release(&file_lock);
           return ;
         }
       }
@@ -420,7 +436,9 @@ syscall_seek_func (struct intr_frame *f)
       struct file* file = fd_get_file (fd);
       if (file != NULL && position <= file_length (file))
       {
+        lock_acquire(&file_lock);
         file_seek (file, position);
+        lock_release(&file_lock);
         return ;
       }
     }
@@ -440,7 +458,9 @@ syscall_tell_func (struct intr_frame *f)
       struct file* file = fd_get_file (fd);
       if (file != NULL)
       {
+        lock_acquire(&file_lock);
         f->eax = file_tell (file);
+        lock_release(&file_lock);
         return ;
       }
     }
@@ -461,7 +481,9 @@ syscall_close_func (struct intr_frame *f)
       struct file* file = fd_remove_file (fd);
       if (file != NULL)
       {
+        lock_acquire(&file_lock);
         file_close (file);
+        lock_release(&file_lock);
         return ;
       }
     }
@@ -543,6 +565,7 @@ syscall_init (void)
   syscall_list[SYS_READDIR] = syscall_readdir_func;    /* 17 */
   syscall_list[SYS_ISDIR] = syscall_isdir_func;        /* 18 */
   syscall_list[SYS_INUMBER] = syscall_inumber_func;    /* 19 */
+  lock_init(&file_lock);
 }
 
 static void

@@ -17,6 +17,7 @@
 #include "threads/palloc.h"
 #include "threads/thread.h"
 #include "threads/vaddr.h"
+#include "threads/synch.h"
 
 static thread_func start_process NO_RETURN;
 static bool load (const char *cmdline, void (**eip) (void), void **esp);
@@ -24,6 +25,7 @@ static struct thread * pid_get_thread (tid_t pid);
 static bool init_oft (struct thread *t);
 static void close_all_file(struct thread *t);
 static void deny_write_me (struct file *file);
+struct lock file_lock;
 
 /* Starts a new thread running a user program loaded from
    FILENAME.  The new thread may be scheduled (and may even exit)
@@ -91,8 +93,10 @@ start_process (void *file_name_)
   if_.eflags = FLAG_IF | FLAG_MBS;
   success = init_oft (thread_current());
   
+  lock_acquire(&file_lock);
   success &= load (file_name, &if_.eip, &if_.esp);
-
+  lock_release(&file_lock);
+  
   /* If load failed, quit. */
   palloc_free_page (file_name); /* 这是上面分配的页 */
   if (!success) 
